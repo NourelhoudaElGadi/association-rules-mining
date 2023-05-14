@@ -5,7 +5,31 @@ warnings.filterwarnings('ignore')
 from flask import Flask, request, jsonify, render_template
 
 import pandas as pd
+from sklearn.decomposition import PCA
 
+from sklearn.decomposition import PCA
+from scipy.sparse import csr_matrix
+
+from sklearn.manifold import TSNE
+
+
+from sklearn.manifold import LocallyLinearEmbedding
+from scipy.sparse import csr_matrix
+
+import umap.umap_ as umap
+
+from sklearn.manifold import Isomap, MDS
+from sklearn.decomposition import PCA,FastICA
+from sklearn.manifold import MDS
+from sklearn.metrics import pairwise_distances
+
+from sklearn.manifold import MDS
+import pandas as pd
+
+from sklearn.manifold import Isomap, MDS
+from scipy.sparse import csr_matrix
+
+from sklearn.manifold import TSNE
 import numpy as np
 import seaborn as sns
 #import matplotlib.pyplot as plt
@@ -212,25 +236,61 @@ def getMatrixCooccurrences(df_article_sort):
 
 ### Réduction du nombre de variables + Clustering
 #L'autoencoder permet de réduire la dimension et de pouvoir appliquer la CAH qui n'est pas robuste face à un nombre trop importants de variables
-def applyAutoencoder(one_hot_matrix):
-    ### Autoenconder  ###
+def applyDimensionalityReduction(one_hot_matrix, n_components, method):
+    methods = {'pca': PCA(n_components=n_components),
+               'tsne': TSNE(n_components=n_components, method='exact', perplexity=30, learning_rate=200, n_iter=1000),
+               'umap': umap.UMAP(n_components=n_components),
+               'isomap': Isomap(n_neighbors=5, n_components=n_components),
+               'mds': MDS(n_components=n_components),
+               'ica': FastICA(n_components=n_components),
+               'lle': LocallyLinearEmbedding(n_components=n_components)}
 
-    input_dim = one_hot_matrix.shape[1]
-    encoding_dim = 128
-    # Number of neurons in each Layer [8, 6, 4, 3, ...] of encoders
-    input_layer = Input(shape=(input_dim, ))
-    encoder_layer_1 = Dense(2048, activation="tanh")(input_layer)
-    encoder_layer_2 = Dense(1024, activation="tanh")(encoder_layer_1)
-    encoder_layer_3 = Dense(256, activation="tanh")(encoder_layer_2)
-    encoder_layer_4 = Dense(encoding_dim, activation="tanh",kernel_regularizer=regularizers.l1_l2(l1=0.001, l2=0.01))(encoder_layer_3)
-    encoder = Model(inputs=input_layer, outputs=encoder_layer_4)
+    if method == 'autoencoder':
+        input_dim = one_hot_matrix.shape[1]
+        encoding_dim = n_components
 
-    # Use the model to predict the factors which sum up the information of interest rates.
-    encoded_data = pd.DataFrame(encoder.predict(one_hot_matrix))
+        input_layer = Input(shape=(input_dim,))
+        encoder_layer_1 = Dense(512, activation="relu")(input_layer)
+        encoder_layer_2 = Dense(256, activation="relu")(encoder_layer_1)
+        encoder_layer_3 = Dense(128, activation="relu")(encoder_layer_2)
+        encoder_layer_4 = Dense(encoding_dim, activation="relu")(encoder_layer_3)
+        encoder = Model(inputs=input_layer, outputs=encoder_layer_4)
 
-    encoded_data.index = one_hot_matrix.index
-    
-    return encoded_data
+        # Create the decoder
+        decoder_layer_1 = Dense(128, activation='relu')(encoder_layer_4)
+        decoder_layer_2 = Dense(256, activation='relu')(decoder_layer_1)
+        decoder_layer_3 = Dense(512, activation='relu')(decoder_layer_2)
+        decoder_layer_4 = Dense(input_dim, activation='sigmoid')(decoder_layer_3)
+        decoder = Model(inputs=encoder_layer_4, outputs=decoder_layer_4)
+
+        # Combine the encoder and decoder to create the autoencoder
+        autoencoder = Model(inputs=input_layer, outputs=decoder(encoder(input_layer)))
+
+        # Compile the model
+        autoencoder.compile(optimizer='adam', loss='mean_squared_error')
+
+        # Train the model
+        autoencoder.fit(one_hot_matrix, one_hot_matrix, epochs=50, batch_size=256, shuffle=True)
+
+        # Use the model to predict the factors which sum up the information of interest rates.
+        reduced_data = pd.DataFrame(encoder.predict(one_hot_matrix))
+        reduced_data.index = one_hot_matrix.index
+    else:
+        # Convertir la matrice d'entrée en une matrice dense ou creuse selon la méthode choisie
+        if method in ['pca', 'ica', 'lle']:
+            one_hot_matrix_dense = csr_matrix(one_hot_matrix).toarray()
+        else:
+            one_hot_matrix_dense = one_hot_matrix.values
+
+        # Réduction de dimensionnalité
+        reducer = methods[method]
+        reduced_data = pd.DataFrame(reducer.fit_transform(one_hot_matrix_dense))
+
+        # Définition des noms de colonnes
+        reduced_data.columns = [method + '_' + str(i+1) for i in range(n_components)]
+        reduced_data.index = one_hot_matrix.index
+
+    return reduced_data
 
 def clusteringCAH(encoded_data):
 
@@ -482,7 +542,7 @@ if __name__ == '__main__':
         print("Number of unique labels (e.g. named entities) : " + str(len(df_article_sort['label'].unique())))
 
         matrix_one_hot = getMatrixCooccurrences(df_article_sort)
-        encoded_data = applyAutoencoder(matrix_one_hot)
+        encoded_data = applyDimensionalityReduction(matrix_one_hot, 128,'autoencoder')
 
         rules_no_clustering = []
         if args.nocluster:
