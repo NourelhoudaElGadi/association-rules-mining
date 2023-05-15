@@ -46,8 +46,8 @@ class AutoEncoderDimentionReduction(TransformerMixin):
         return self.encoder.predict(X)
     
     def fit_transform(self, X, y=None):
-        return self.fit(X, y)
-
+        self.fit(X)
+        return self.transform(X)
 
 
 

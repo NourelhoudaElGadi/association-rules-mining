@@ -71,7 +71,7 @@ parser.add_argument('--community', help='Compute rules using a Community Detecti
 parser.add_argument('--hac', help='Compute rules using a hierarchial agglomerative (i.e., bottom-up) clustering (HAC) of transactions. Default is True.', default=True, required=False) 
 parser.add_argument('--clustercombo', help='Compute rules by combining both clustering methods (i.e. HAC and Community Detection). Default is True.', default=True, required=False) 
 parser.add_argument('--method', help='The method of dimensionality reduction. Available options: PCA, AutoEncoder,ICA,Isomap,MDS,UMAP,TSNE,LLE', default='PCA', required=True)
-parser.add_argument('--n_components', type=int, help='The n_components for the method of dimensionality reduction. Default is 2', default=2, required=True)
+parser.add_argument('--n_components', type=int, help='The n_components for the method of dimensionality reduction. Default is 128', default=128, required=True)
 
 parser.add_argument('--append', default=False, required=False) 
 
