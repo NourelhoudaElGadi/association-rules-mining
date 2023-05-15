@@ -95,9 +95,10 @@ def transform_data(df, min_occur):
     df_article_sort = df_article_sort.astype({"article": str, "label": str})# , "year": str})
     #df_article_sort['Label'] = df_article_sort['Label'].apply(lambda x: x.lower())
     df_article_sort['label'] = df_article_sort['label']#.apply(lambda x: x.replace('.', '').replace(',', ''))
-    df_article_sort = df_article_sort.drop(df_article_sort[df_article_sort['label']])
+    #df_article_sort = df_article_sort.drop(df_article_sort[df_article_sort['label']])
                                            #apply(lambda x: delete_Label_number(x)) == True].index)
-    
+    df_article_sort = df_article_sort.dropna(subset=['label'])
+
     df_article_sort = df_article_sort.loc[df_article_sort['label'].
         isin(list(df_article_sort['label'].value_counts(sort=True)
                   [df_article_sort['label'].value_counts(sort=True) > min_occur].index))]
@@ -728,3 +729,4 @@ def comparison(rules1,rules2) :
     print("Number of same rows : " + str(dataframe_difference(rules1.loc[:,['antecedents','consequents']],rules2.loc[:,['antecedents','consequents']])))
     print("Number of same rows among top 10 most interesting rules : " + str(dataframe_difference(rules1.sort_values(by=['confidence','interestingness'],ascending=False).loc[:,['antecedents','consequents']].head(10),rules2.sort_values(by=['confidence','interestingness'],ascending=False).loc[:,['antecedents','consequents']].head(10))))
     print("Number of same rows among top 20 most interesting rules : " + str(dataframe_difference(rules1.sort_values(by=['confidence','interestingness'],ascending=False).loc[:,['antecedents','consequents']].head(20),rules2.sort_values(by=['confidence','interestingness'],ascending=False).loc[:,['antecedents','consequents']].head(20))))
+

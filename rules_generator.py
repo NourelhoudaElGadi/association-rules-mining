@@ -33,6 +33,12 @@ from keras import regularizers
 
 from stellargraph.data import BiasedRandomWalk
 from stellargraph import StellarGraph
+from scipy.sparse import csr_matrix
+from sklearn.decomposition import PCA, FastICA
+from sklearn.manifold import TSNE, Isomap, MDS, LocallyLinearEmbedding
+from umap import UMAP
+from keras.layers import Input, Dense
+from keras.models import Model
 
 
 from gensim.models import Word2Vec
@@ -42,10 +48,10 @@ from urllib.request import urlopen
 import urllib.parse
 
 import csv
-
+import umap.umap_ as umap
 from utils import *
 from datasets import *
-
+from autoencoder import *
 import argparse, sys
 from os.path import exists
 
@@ -64,6 +70,8 @@ parser.add_argument('--nocluster', help='Compute rules without any kind of clust
 parser.add_argument('--community', help='Compute rules using a Community Detection method to cluster transactions. Default is True.', default=True, required=False) 
 parser.add_argument('--hac', help='Compute rules using a hierarchial agglomerative (i.e., bottom-up) clustering (HAC) of transactions. Default is True.', default=True, required=False) 
 parser.add_argument('--clustercombo', help='Compute rules by combining both clustering methods (i.e. HAC and Community Detection). Default is True.', default=True, required=False) 
+parser.add_argument('--method', help='The method of dimensionality reduction. Available options: PCA, AutoEncoder,ICA,Isomap,MDS,UMAP,TSNE,LLE', default='PCA', required=True)
+parser.add_argument('--n_components', type=int, help='The n_components for the method of dimensionality reduction. Default is 2', default=2, required=True)
 
 parser.add_argument('--append', default=False, required=False) 
 
@@ -95,7 +103,7 @@ def query() :
     ## Get all data by set the offset at each round ##
     while (df_query.shape[0] > 0):
         print("offset = ", offset)
-        offset += 10000
+        offset += 70000
         complete_query = query % (offset)
         df_query = sparql_service_to_dataframe(datasets[args.endpoint]["url"], complete_query)
         list_total.append(df_query)
@@ -212,25 +220,32 @@ def getMatrixCooccurrences(df_article_sort):
 
 ### Réduction du nombre de variables + Clustering
 #L'autoencoder permet de réduire la dimension et de pouvoir appliquer la CAH qui n'est pas robuste face à un nombre trop importants de variables
-def applyAutoencoder(one_hot_matrix):
-    ### Autoenconder  ###
+def applyDimensionalityReduction(one_hot_matrix, n_components, method):
+    methods = {'autoencoder':AutoEncoderDimentionReduction(encoding_dim=n_components, epochs=50, batch_size=256,activation='relu', activation_output='sigmoid'),
+               'pca': PCA(n_components=n_components),
+               'tsne': TSNE(n_components=n_components, method='exact', perplexity=30, learning_rate=200, n_iter=1000),
+               'umap': umap.UMAP(n_components=n_components),
+               'isomap': Isomap(n_neighbors=5, n_components=n_components),
+               'mds': MDS(n_components=n_components),
+               'ica': FastICA(n_components=n_components),
+               'lle': LocallyLinearEmbedding(n_components=n_components)}
 
-    input_dim = one_hot_matrix.shape[1]
-    encoding_dim = 128
-    # Number of neurons in each Layer [8, 6, 4, 3, ...] of encoders
-    input_layer = Input(shape=(input_dim, ))
-    encoder_layer_1 = Dense(2048, activation="tanh")(input_layer)
-    encoder_layer_2 = Dense(1024, activation="tanh")(encoder_layer_1)
-    encoder_layer_3 = Dense(256, activation="tanh")(encoder_layer_2)
-    encoder_layer_4 = Dense(encoding_dim, activation="tanh",kernel_regularizer=regularizers.l1_l2(l1=0.001, l2=0.01))(encoder_layer_3)
-    encoder = Model(inputs=input_layer, outputs=encoder_layer_4)
-
-    # Use the model to predict the factors which sum up the information of interest rates.
-    encoded_data = pd.DataFrame(encoder.predict(one_hot_matrix))
-
-    encoded_data.index = one_hot_matrix.index
     
-    return encoded_data
+        # Convertir la matrice d'entrée en une matrice dense ou creuse selon la méthode choisie
+    if method in ['pca', 'ica', 'lle','ica','isomap','mds']:
+        one_hot_matrix_dense = csr_matrix(one_hot_matrix).toarray()
+    else:
+        one_hot_matrix_dense = one_hot_matrix.values
+
+    # Réduction de dimensionnalité
+    reducer = methods[method]
+    reduced_data = pd.DataFrame(reducer.fit_transform(one_hot_matrix_dense))
+
+    # Définition des noms de colonnes
+    reduced_data.columns = [method + '_' + str(i+1) for i in range(n_components)]
+    reduced_data.index = one_hot_matrix.index
+
+    return reduced_data
 
 def clusteringCAH(encoded_data):
 
@@ -482,7 +497,7 @@ if __name__ == '__main__':
         print("Number of unique labels (e.g. named entities) : " + str(len(df_article_sort['label'].unique())))
 
         matrix_one_hot = getMatrixCooccurrences(df_article_sort)
-        encoded_data = applyAutoencoder(matrix_one_hot)
+        encoded_data = applyDimensionalityReduction(matrix_one_hot, args.n_components, args.method)
 
         rules_no_clustering = []
         if args.nocluster:
@@ -552,3 +567,5 @@ if __name__ == '__main__':
 
         
         
+
+
