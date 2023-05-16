@@ -31,8 +31,6 @@ from keras.models import Model
 from keras.layers import Input, Dense
 from keras import regularizers
 
-from stellargraph.data import BiasedRandomWalk
-from stellargraph import StellarGraph
 from scipy.sparse import csr_matrix
 from sklearn.decomposition import PCA, FastICA
 from sklearn.manifold import TSNE, Isomap, MDS, LocallyLinearEmbedding
@@ -70,8 +68,8 @@ parser.add_argument('--nocluster', help='Compute rules without any kind of clust
 parser.add_argument('--community', help='Compute rules using a Community Detection method to cluster transactions. Default is True.', default=True, required=False) 
 parser.add_argument('--hac', help='Compute rules using a hierarchial agglomerative (i.e., bottom-up) clustering (HAC) of transactions. Default is True.', default=True, required=False) 
 parser.add_argument('--clustercombo', help='Compute rules by combining both clustering methods (i.e. HAC and Community Detection). Default is True.', default=True, required=False) 
-parser.add_argument('--method', help='The method of dimensionality reduction. Available options: PCA, AutoEncoder,ICA,Isomap,MDS,UMAP,TSNE,LLE', default='PCA', required=True)
-parser.add_argument('--n_components', type=int, help='The n_components for the method of dimensionality reduction. Default is 128', default=128, required=True)
+parser.add_argument('--method', help='The method of dimensionality reduction. Available options: PCA, AutoEncoder,ICA,Isomap,MDS,UMAP,TSNE,LLE', default='pca', required=False)
+parser.add_argument('--n_components', type=int, help='The n_components for the method of dimensionality reduction. Default is 128', default=128, required=False)
 
 parser.add_argument('--append', default=False, required=False) 
 
