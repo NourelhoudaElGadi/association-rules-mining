@@ -101,7 +101,7 @@ def query() :
     ## Get all data by set the offset at each round ##
     while (df_query.shape[0] > 0):
         print("offset = ", offset)
-        offset += 70000
+        offset += 10000
         complete_query = query % (offset)
         df_query = sparql_service_to_dataframe(datasets[args.endpoint]["url"], complete_query)
         list_total.append(df_query)
