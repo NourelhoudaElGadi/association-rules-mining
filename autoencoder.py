@@ -3,6 +3,16 @@ from keras.models import Model
 from keras.optimizers import Adam
 from sklearn.base import TransformerMixin
 
+import tf
+
+
+def softplus(x):
+    return tf.math.log(tf.math.exp(x) + 1)
+
+
+def mish(x):
+    return x * tf.math.tanh(softplus(x))
+
 
 class AutoEncoderDimensionReduction(TransformerMixin):
     def __init__(self, encoding_dim, epochs, batch_size, lr=1e5):
@@ -32,16 +42,16 @@ class AutoEncoderDimensionReduction(TransformerMixin):
         encoder = Model(inputs=input_layer, outputs=encoder)
 
         # Create the decoder
-        decoder = Dense(128, activation="mish")(encoder)
+        decoder = Dense(128, activation=mish)(encoder)
         decoder = BatchNormalization()(decoder)
         decoder = Dropout(0.1)(decoder)
-        decoder = Dense(256, activation="mish")(decoder)
+        decoder = Dense(256, activation=mish)(decoder)
         decoder = BatchNormalization()(decoder)
         decoder = Dropout(0.1)(decoder)
-        decoder = Dense(512, activation="mish")(decoder)
+        decoder = Dense(512, activation=mish)(decoder)
         decoder = BatchNormalization()(decoder)
         decoder = Dropout(0.1)(decoder)
-        decoder = Dense(input_dim, activation="mish")(decoder)
+        decoder = Dense(input_dim, activation=mish)(decoder)
         decoder = Model(inputs=encoder, outputs=decoder)
 
         # Combine the encoder and decoder to create the autoencoder
