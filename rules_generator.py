@@ -492,11 +492,11 @@ def rulesClustering(one_hot_label, groupe, index, new_cluster, index_of_cluster)
 
     regles_clustering_final = pd.DataFrame()
     for i in range(len(regles_clustering)):
-        regles_clustering[i]["cluster"] = "clust" + str(i + 1)
+        regles_clustering[i]["cluster"] = f"clust{str(i + 1)}"
         regles_clustering_final = regles_clustering_final.append(regles_clustering[i])
 
     # Number of rules
-    print("Clustering | Number of rules = " + str(regles_clustering_final.shape[0]))
+    print(f"Clustering | Number of rules = {str(regles_clustering_final.shape[0])}")
 
     # regles_clustering_final.head()
     return regles_clustering_final
@@ -538,7 +538,7 @@ def rulesNewCluter(one_hot_label, new_cluster, index_of_cluster):
         regles_reclustering.append(
             create_rules_df_clustering(regles_fp_clustering_reclust[i], float(args.int))
         )
-        print("Clustering | Post-processing step " + str(i))
+        print(f"Clustering | Post-processing step {str(i)}")
 
     ### ASSOCIER REGLES AU CLUSTER -> Attention ici on a deux cluster : ###
     ### celui trouvé en premier puis celui trouvé en réappliquant la clusterisation ###
@@ -548,9 +548,9 @@ def rulesNewCluter(one_hot_label, new_cluster, index_of_cluster):
     for i in range(len(regles_reclustering)):
         if len(regles_reclustering[i]) != 0:
             for j in range(len(regles_reclustering[i])):
-                regles_reclustering[i][j]["cluster"] = (
-                    "_clust" + str(index_of_cluster[i] + 1) + "_clust" + str(j + 1)
-                )
+                regles_reclustering[i][j][
+                    "cluster"
+                ] = f"_clust{str(index_of_cluster[i] + 1)}_clust{str(j + 1)}"
                 regles_reclustering_final.append(regles_reclustering[i][j])
 
     return pd.concat(regles_reclustering_final)
@@ -572,7 +572,7 @@ def combineClusterRules(regles_clustering_final, regles_reclustering_final):
 
     rules_clustering = regles_clustering_final.append(regles_reclustering_final)
     rules_clustering.reset_index(inplace=True, drop=True)
-    print("Clustering | Total number of rules = " + str(rules_clustering.shape[0]))
+    print(f"Clustering | Total number of rules = {str(rules_clustering.shape[0])}")
 
     # transform lists into strings to use in drop_duplicates
     listToString(rules_clustering)
@@ -651,25 +651,27 @@ if __name__ == "__main__":
     with app.app_context():
         print("Running algorithm with parameters:")
         print(
-            "SPARQL endpoint = "
-            + (
-                "None"
-                if args.endpoint == None
-                else datasets[args.endpoint]["url"] + " (" + args.endpoint + ")"
+            (
+                "SPARQL endpoint = "
+                + (
+                    "None"
+                    if args.endpoint is None
+                    else datasets[args.endpoint]["url"] + " (" + args.endpoint + ")"
+                )
             )
         )
-        print("Graph = " + str(args.graph))
-        print("Minimum confidence = " + str(args.conf))
-        print("Minimum interestingness = " + str(args.int))
-        print("Minimum occurrence = " + str(args.occurrence))
-        print("Input data path = ", str(args.input))
-        print("Output data file = ", str(args.filename))
+        print(f"Graph = {str(args.graph)}")
+        print(f"Minimum confidence = {str(args.conf)}")
+        print(f"Minimum interestingness = {str(args.int)}")
+        print(f"Minimum occurrence = {str(args.occurrence)}")
+        print("Input data path = ", args.input)
+        print("Output data file = ", args.filename)
 
-        args.nocluster = False if args.nocluster == "False" else True
-        args.community = False if args.nocluster == "False" else True
-        args.hac = False if args.nocluster == "False" else True
+        args.nocluster = args.nocluster != "False"
+        args.community = args.nocluster != "False"
+        args.hac = args.nocluster != "False"
 
-        args.append = True if args.append == "True" else False
+        args.append = args.append == "True"
 
         if args.endpoint is None and args.input is None:
             print(
@@ -693,7 +695,7 @@ if __name__ == "__main__":
         elif args.endpoint == "crobora":
             df_total = fetchCroboraData()
 
-        print("Input size = " + str(df_total.shape[0]) + " lines")
+        print(f"Input size = {str(df_total.shape[0])} lines")
 
         ### DADA PREPARATION : keep articles with at least one label associated, sort articles by alphabetic order, put labels all in lower case, etc. ###
 
@@ -753,7 +755,7 @@ if __name__ == "__main__":
         )  # .append(all_rules_clustering_wt)
         all_rules.reset_index(inplace=True, drop=True)
 
-        print("All rules | Number of rules = ", str(all_rules.shape[0]))
+        print("All rules | Number of rules = ", all_rules.shape[0])
         listToString(all_rules)
         all_rules = all_rules.drop_duplicates(
             subset=["antecedents", "consequents", "isSymmetric"]
@@ -762,11 +764,11 @@ if __name__ == "__main__":
 
         print(
             "All rules | Number of rules after symmetric duplicate filter = ",
-            str(all_rules.shape[0]),
+            all_rules.shape[0],
         )
         exportRules(all_rules, "all_rules")
 
-        filename = "data/config_" + str(args.endpoint) + ".json"
+        filename = f"data/config_{str(args.endpoint)}.json"
         # verify if config file exists before
         if exists(filename):
             config = pd.read_json(filename)
