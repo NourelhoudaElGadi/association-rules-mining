@@ -19,9 +19,7 @@ class AutoEncoderDimensionReduction(TransformerMixin):
         encoder_layer_1 = Dense(512, activation="tanh")(input_layer)
         encoder_layer_2 = Dense(256, activation="relu")(encoder_layer_1)
         encoder_layer_3 = Dense(128, activation="relu")(encoder_layer_2)
-        encoder_layer_4 = Dense(encoding_dim, activation=self.activation)(
-            encoder_layer_3
-        )
+        encoder_layer_4 = Dense(encoding_dim, activation="relu")(encoder_layer_3)
         encoder = Model(inputs=input_layer, outputs=encoder_layer_4)
 
         # Create the decoder
