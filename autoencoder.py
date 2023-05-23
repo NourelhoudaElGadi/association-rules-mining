@@ -1,14 +1,16 @@
-from keras.layers import Input, Dense
+from keras.layers import Input, Dense, Dropout
 from keras.models import Model
+from keras.optimizers import Adam
 from sklearn.base import TransformerMixin
 
 class AutoEncoderDimentionReduction(TransformerMixin):
-    def __init__(self, encoding_dim, epochs, batch_size, activation, activation_output):
+    def __init__(self, encoding_dim, epochs, batch_size, activation, activation_output, lr=1e5):
         self.encoding_dim = encoding_dim
         self.epochs = epochs
         self.batch_size = batch_size
         self.activation = activation
         self.activation_output = activation_output
+        self.lr = lr
 
     def fit(self, X, y=None):
         input_dim = X.shape[1]
@@ -31,8 +33,9 @@ class AutoEncoderDimentionReduction(TransformerMixin):
         # Combine the encoder and decoder to create the autoencoder
         autoencoder = Model(inputs=input_layer, outputs=decoder(encoder(input_layer)))
 
+        optimizer = Adam(lr=0.01)
         # Compile the model
-        autoencoder.compile(optimizer='adam', loss='mean_squared_error')
+        autoencoder.compile(optimizer=optimizer, loss='mean_squared_error')
 
         # Train the model
         autoencoder.fit(X, X, epochs=self.epochs, batch_size=self.batch_size, shuffle=True)
