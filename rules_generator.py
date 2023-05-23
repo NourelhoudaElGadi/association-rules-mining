@@ -55,8 +55,12 @@ from keras.models import Model
 from keras.layers import Input, Dense
 from keras import regularizers
 
-from stellargraph.data import BiasedRandomWalk
-from stellargraph import StellarGraph
+from scipy.sparse import csr_matrix
+from sklearn.decomposition import PCA, FastICA
+from sklearn.manifold import TSNE, Isomap, MDS, LocallyLinearEmbedding
+from umap import UMAP
+from keras.layers import Input, Dense
+from keras.models import Model
 
 
 from gensim.models import Word2Vec
@@ -66,10 +70,10 @@ from urllib.request import urlopen
 import urllib.parse
 
 import csv
-
+import umap.umap_ as umap
 from utils import *
 from datasets import *
-
+from autoencoder import *
 import argparse, sys
 from os.path import exists
 
@@ -88,6 +92,8 @@ parser.add_argument('--nocluster', help='Compute rules without any kind of clust
 parser.add_argument('--community', help='Compute rules using a Community Detection method to cluster transactions. Default is True.', default=True, required=False) 
 parser.add_argument('--hac', help='Compute rules using a hierarchial agglomerative (i.e., bottom-up) clustering (HAC) of transactions. Default is True.', default=True, required=False) 
 parser.add_argument('--clustercombo', help='Compute rules by combining both clustering methods (i.e. HAC and Community Detection). Default is True.', default=True, required=False) 
+parser.add_argument('--method', help='The method of dimensionality reduction. Available options: PCA, AutoEncoder,ICA,Isomap,MDS,UMAP,TSNE,LLE', default='pca', required=False)
+parser.add_argument('--n_components', type=int, help='The n_components for the method of dimensionality reduction. Default is 128', default=128, required=False)
 
 parser.add_argument('--append', default=False, required=False) 
 
@@ -237,7 +243,9 @@ def getMatrixCooccurrences(df_article_sort):
 ### Réduction du nombre de variables + Clustering
 #L'autoencoder permet de réduire la dimension et de pouvoir appliquer la CAH qui n'est pas robuste face à un nombre trop importants de variables
 def applyDimensionalityReduction(one_hot_matrix, n_components, method):
-    methods = {'pca': PCA(n_components=n_components),
+
+    methods = {'autoencoder':AutoEncoderDimentionReduction(encoding_dim=n_components, epochs=100, batch_size=128,activation='relu', activation_output='sigmoid'),
+               'pca': PCA(n_components=n_components),
                'tsne': TSNE(n_components=n_components, method='exact', perplexity=30, learning_rate=200, n_iter=1000),
                'umap': umap.UMAP(n_components=n_components),
                'isomap': Isomap(n_neighbors=5, n_components=n_components),
@@ -245,50 +253,27 @@ def applyDimensionalityReduction(one_hot_matrix, n_components, method):
                'ica': FastICA(n_components=n_components),
                'lle': LocallyLinearEmbedding(n_components=n_components)}
 
-    if method == 'autoencoder':
-        input_dim = one_hot_matrix.shape[1]
-        encoding_dim = n_components
-
-        input_layer = Input(shape=(input_dim,))
-        encoder_layer_1 = Dense(512, activation="relu")(input_layer)
-        encoder_layer_2 = Dense(256, activation="relu")(encoder_layer_1)
-        encoder_layer_3 = Dense(128, activation="relu")(encoder_layer_2)
-        encoder_layer_4 = Dense(encoding_dim, activation="relu")(encoder_layer_3)
-        encoder = Model(inputs=input_layer, outputs=encoder_layer_4)
-
-        # Create the decoder
-        decoder_layer_1 = Dense(128, activation='relu')(encoder_layer_4)
-        decoder_layer_2 = Dense(256, activation='relu')(decoder_layer_1)
-        decoder_layer_3 = Dense(512, activation='relu')(decoder_layer_2)
-        decoder_layer_4 = Dense(input_dim, activation='sigmoid')(decoder_layer_3)
-        decoder = Model(inputs=encoder_layer_4, outputs=decoder_layer_4)
-
-        # Combine the encoder and decoder to create the autoencoder
-        autoencoder = Model(inputs=input_layer, outputs=decoder(encoder(input_layer)))
-
-        # Compile the model
-        autoencoder.compile(optimizer='adam', loss='mean_squared_error')
-
-        # Train the model
-        autoencoder.fit(one_hot_matrix, one_hot_matrix, epochs=50, batch_size=256, shuffle=True)
-
-        # Use the model to predict the factors which sum up the information of interest rates.
-        reduced_data = pd.DataFrame(encoder.predict(one_hot_matrix))
-        reduced_data.index = one_hot_matrix.index
-    else:
+# The above code is implementing dimensionality reduction techniques such as autoencoder, PCA, ICA,
+# LLE, etc. on a given input matrix `one_hot_matrix`. If the chosen method is autoencoder, it creates
+# an autoencoder model using Keras and trains it on the input matrix. If the chosen method is any
+# other dimensionality reduction technique, it applies the chosen method on the input matrix and
+# returns the reduced data in a pandas DataFrame format. The number of components for the
+# dimensionality reduction is specified by the `n_components` parameter. The resulting reduced data is
+# returned with column names based
+    
         # Convertir la matrice d'entrée en une matrice dense ou creuse selon la méthode choisie
-        if method in ['pca', 'ica', 'lle']:
-            one_hot_matrix_dense = csr_matrix(one_hot_matrix).toarray()
-        else:
-            one_hot_matrix_dense = one_hot_matrix.values
+    if method in ['pca', 'ica', 'lle','ica','isomap','mds']:
+        one_hot_matrix_dense = csr_matrix(one_hot_matrix).toarray()
+    else:
+        one_hot_matrix_dense = one_hot_matrix.values
 
-        # Réduction de dimensionnalité
-        reducer = methods[method]
-        reduced_data = pd.DataFrame(reducer.fit_transform(one_hot_matrix_dense))
+    # Réduction de dimensionnalité
+    reducer = methods[method]
+    reduced_data = pd.DataFrame(reducer.fit_transform(one_hot_matrix_dense))
 
-        # Définition des noms de colonnes
-        reduced_data.columns = [method + '_' + str(i+1) for i in range(n_components)]
-        reduced_data.index = one_hot_matrix.index
+    # Définition des noms de colonnes
+    reduced_data.columns = [method + '_' + str(i+1) for i in range(n_components)]
+    reduced_data.index = one_hot_matrix.index
 
     return reduced_data
 
@@ -542,7 +527,7 @@ if __name__ == '__main__':
         print("Number of unique labels (e.g. named entities) : " + str(len(df_article_sort['label'].unique())))
 
         matrix_one_hot = getMatrixCooccurrences(df_article_sort)
-        encoded_data = applyDimensionalityReduction(matrix_one_hot, 128,'autoencoder')
+        encoded_data = applyDimensionalityReduction(matrix_one_hot, args.n_components, args.method)
 
         rules_no_clustering = []
         if args.nocluster:
@@ -612,3 +597,5 @@ if __name__ == '__main__':
 
         
         
+
+

@@ -11,7 +11,7 @@ scikit_learn==1.0.2
 scipy==1.6.2
 seaborn==0.11.1
 SPARQLWrapper==2.0.0
-stellargraph==1.2.1
+#stellargraph==1.2.1
 chardet==5.0.0
 infomap==2.6.1
 #karateclub

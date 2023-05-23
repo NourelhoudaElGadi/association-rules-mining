@@ -729,3 +729,4 @@ def comparison(rules1,rules2) :
     print("Number of same rows : " + str(dataframe_difference(rules1.loc[:,['antecedents','consequents']],rules2.loc[:,['antecedents','consequents']])))
     print("Number of same rows among top 10 most interesting rules : " + str(dataframe_difference(rules1.sort_values(by=['confidence','interestingness'],ascending=False).loc[:,['antecedents','consequents']].head(10),rules2.sort_values(by=['confidence','interestingness'],ascending=False).loc[:,['antecedents','consequents']].head(10))))
     print("Number of same rows among top 20 most interesting rules : " + str(dataframe_difference(rules1.sort_values(by=['confidence','interestingness'],ascending=False).loc[:,['antecedents','consequents']].head(20),rules2.sort_values(by=['confidence','interestingness'],ascending=False).loc[:,['antecedents','consequents']].head(20))))
+
