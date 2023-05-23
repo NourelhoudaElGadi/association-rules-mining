@@ -42,7 +42,7 @@ class AutoEncoderDimensionReduction(TransformerMixin):
         encoder = Model(inputs=input_layer, outputs=encoder)
 
         # Create the decoder
-        decoder = Dense(128, activation=mish)(encoder)
+        decoder = Dense(128, activation=mish)(encoder.output)
         decoder = BatchNormalization()(decoder)
         decoder = Dropout(0.1)(decoder)
         decoder = Dense(256, activation=mish)(decoder)
