@@ -1,4 +1,4 @@
-from keras.layers import Input, Dense, Dropout
+from keras.layers import Input, Dense, Dropout, BatchNormalization
 from keras.models import Model
 from keras.optimizers import Adam
 from sklearn.base import TransformerMixin
@@ -15,19 +15,34 @@ class AutoEncoderDimensionReduction(TransformerMixin):
         input_dim = X.shape[1]
         encoding_dim = self.encoding_dim
 
+        # `input_layer` is defining the input layer of the autoencoder neural network. It is a
+        # placeholder for the input data, with the shape of `(input_dim,)`, where `input_dim` is the
+        # number of features in the input data.
         input_layer = Input(shape=(input_dim,))
-        encoder_layer_1 = Dense(512, activation="tanh")(input_layer)
-        encoder_layer_2 = Dense(256, activation="relu")(encoder_layer_1)
-        encoder_layer_3 = Dense(128, activation="relu")(encoder_layer_2)
-        encoder_layer_4 = Dense(encoding_dim, activation="relu")(encoder_layer_3)
-        encoder = Model(inputs=input_layer, outputs=encoder_layer_4)
+        encoder = Dense(512, activation="tanh")(input_layer)
+        encoder = BatchNormalization()(encoder)
+        encoder = Dropout(0.1)(encoder)
+        encoder = Dense(256, activation="relu")(encoder)
+        encoder = BatchNormalization()(encoder)
+        encoder = Dropout(0.1)(encoder)
+        encoder = Dense(128, activation="relu")(encoder)
+        encoder = BatchNormalization()(encoder)
+        encoder = Dropout(0.1)(encoder)
+        encoder = Dense(encoding_dim, activation="relu")(encoder)
+        encoder = Model(inputs=input_layer, outputs=encoder)
 
         # Create the decoder
-        decoder_layer_1 = Dense(128, activation="tanh")(encoder_layer_4)
-        decoder_layer_2 = Dense(256, activation="relu")(decoder_layer_1)
-        decoder_layer_3 = Dense(512, activation="relu")(decoder_layer_2)
-        decoder_layer_4 = Dense(input_dim, activation="tanh")(decoder_layer_3)
-        decoder = Model(inputs=encoder_layer_4, outputs=decoder_layer_4)
+        decoder = Dense(128, activation="mish")(encoder)
+        decoder = BatchNormalization()(decoder)
+        decoder = Dropout(0.1)(decoder)
+        decoder = Dense(256, activation="mish")(decoder)
+        decoder = BatchNormalization()(decoder)
+        decoder = Dropout(0.1)(decoder)
+        decoder = Dense(512, activation="mish")(decoder)
+        decoder = BatchNormalization()(decoder)
+        decoder = Dropout(0.1)(decoder)
+        decoder = Dense(input_dim, activation="mish")(decoder)
+        decoder = Model(inputs=encoder, outputs=decoder)
 
         # Combine the encoder and decoder to create the autoencoder
         autoencoder = Model(inputs=input_layer, outputs=decoder(encoder(input_layer)))
