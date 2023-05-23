@@ -3,7 +3,7 @@ from keras.models import Model
 from keras.optimizers import Adam
 from sklearn.base import TransformerMixin
 
-import tf
+import tensorflow as tf
 
 
 def softplus(x):
