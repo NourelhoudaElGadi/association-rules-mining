@@ -39,10 +39,10 @@ class AutoEncoderDimensionReduction(TransformerMixin):
         encoder = BatchNormalization()(encoder)
         encoder = Dropout(0.1)(encoder)
         encoder = Dense(encoding_dim, activation="relu")(encoder)
-        encoder = Model(inputs=input_layer, outputs=encoder)
+        encoder_model = Model(inputs=input_layer, outputs=encoder)
 
         # Create the decoder
-        decoder = Dense(128, activation=mish)(encoder.output)
+        decoder = Dense(128, activation=mish)(encoder)
         decoder = BatchNormalization()(decoder)
         decoder = Dropout(0.1)(decoder)
         decoder = Dense(256, activation=mish)(decoder)
@@ -52,10 +52,12 @@ class AutoEncoderDimensionReduction(TransformerMixin):
         decoder = BatchNormalization()(decoder)
         decoder = Dropout(0.1)(decoder)
         decoder = Dense(input_dim, activation=mish)(decoder)
-        decoder = Model(inputs=encoder, outputs=decoder)
+        decoder_model = Model(inputs=encoder, outputs=decoder)
 
         # Combine the encoder and decoder to create the autoencoder
-        autoencoder = Model(inputs=input_layer, outputs=decoder(encoder(input_layer)))
+        autoencoder = Model(
+            inputs=input_layer, outputs=decoder_model(encoder_model(input_layer))
+        )
 
         optimizer = Adam(lr=self.lr)
         # Compile the model
