@@ -2,20 +2,16 @@ from keras.layers import Input, Dense, Dropout, BatchNormalization
 from keras.models import Model
 from keras.optimizers import Adam
 from sklearn.base import TransformerMixin
-
 import tensorflow as tf
-
 
 def softplus(x):
     return tf.math.log(tf.math.exp(x) + 1)
 
-
 def mish(x):
     return x * tf.math.tanh(softplus(x))
 
-
 class AutoEncoderDimensionReduction(TransformerMixin):
-    def __init__(self, encoding_dim, epochs, batch_size, lr=1e5):
+    def __init__(self, encoding_dim, epochs, batch_size, lr=1e-3):
         self.encoding_dim = encoding_dim
         self.epochs = epochs
         self.batch_size = batch_size
@@ -51,7 +47,7 @@ class AutoEncoderDimensionReduction(TransformerMixin):
         decoder = Dense(512, activation=mish)(decoder)
         decoder = BatchNormalization()(decoder)
         decoder = Dropout(0.1)(decoder)
-        decoder = Dense(input_dim, activation=mish)(decoder)
+        decoder = Dense(input_dim, activation="sigmoid")(decoder)
         decoder_model = Model(inputs=encoder, outputs=decoder)
 
         # Combine the encoder and decoder to create the autoencoder
@@ -68,13 +64,13 @@ class AutoEncoderDimensionReduction(TransformerMixin):
             X, X, epochs=self.epochs, batch_size=self.batch_size, shuffle=True
         )
 
-        self.encoder = encoder
+        self.encoder_model = encoder_model
 
         # Return the transformed data
-        return self.encoder.predict(X)
+        return self.encoder_model.predict(X)
 
     def transform(self, X):
-        return self.encoder.predict(X)
+        return self.encoder_model.predict(X)
 
     def fit_transform(self, X, y=None):
         self.fit(X)

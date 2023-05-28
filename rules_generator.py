@@ -323,7 +323,7 @@ def applyDimensionalityReduction(one_hot_matrix, n_components, method):
             encoding_dim=n_components,
             epochs=100,
             batch_size=128,
-            lr=1e3,
+            lr=1e-3,
         ),
         "pca": PCA(n_components=n_components),
         "tsne": TSNE(
