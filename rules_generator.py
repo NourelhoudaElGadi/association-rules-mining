@@ -3,7 +3,6 @@ import warnings
 
 warnings.filterwarnings("ignore")
 
-from flask import Flask
 
 import pandas as pd
 from sklearn.decomposition import PCA
@@ -139,7 +138,7 @@ parser.add_argument("--append", default=False, required=False)
 
 args = parser.parse_args()
 
-app = Flask(__name__)
+# app = Flask(__name__)
 
 
 def query():
@@ -646,148 +645,147 @@ def exportRules(rules_df, cluster):
 
 
 if __name__ == "__main__":
-    with app.app_context():
-        print("Running algorithm with parameters:")
+    print("Running algorithm with parameters:")
+    print(
+        (
+            "SPARQL endpoint = "
+            + (
+                "None"
+                if args.endpoint is None
+                else datasets[args.endpoint]["url"] + " (" + args.endpoint + ")"
+            )
+        )
+    )
+    print(f"Graph = {str(args.graph)}")
+    print(f"Minimum confidence = {str(args.conf)}")
+    print(f"Minimum interestingness = {str(args.int)}")
+    print(f"Minimum occurrence = {str(args.occurrence)}")
+    print("Input data path = ", args.input)
+    print("Output data file = ", args.filename)
+
+    args.nocluster = args.nocluster != "False"
+    args.community = args.nocluster != "False"
+    args.hac = args.nocluster != "False"
+
+    args.append = args.append == "True"
+
+    if args.endpoint is None and args.input is None:
         print(
-            (
-                "SPARQL endpoint = "
-                + (
-                    "None"
-                    if args.endpoint is None
-                    else datasets[args.endpoint]["url"] + " (" + args.endpoint + ")"
-                )
-            )
+            "You must provide either an endpoint name (e.g. issa, covid) or an input file."
         )
-        print(f"Graph = {str(args.graph)}")
-        print(f"Minimum confidence = {str(args.conf)}")
-        print(f"Minimum interestingness = {str(args.int)}")
-        print(f"Minimum occurrence = {str(args.occurrence)}")
-        print("Input data path = ", args.input)
-        print("Output data file = ", args.filename)
+        sys.exit(0)
 
-        args.nocluster = args.nocluster != "False"
-        args.community = args.nocluster != "False"
-        args.hac = args.nocluster != "False"
-
-        args.append = args.append == "True"
-
-        if args.endpoint is None and args.input is None:
-            print(
-                "You must provide either an endpoint name (e.g. issa, covid) or an input file."
-            )
-            sys.exit(0)
-
-        if args.endpoint is not None and args.endpoint not in datasets:
-            print(
-                "Please provide a valid endpoint. The endpoint "
-                + args.endpoint
-                + " is not registered."
-            )
-            sys.exit(0)
-
-        if args.input is not None:
-            df_total = pd.read_csv(args.input)
-        elif args.endpoint is not None and datasets[args.endpoint]["type"] == "rdf":
-            ## retrieve the data from SPARQL endpoint
-            df_total = query()
-        elif args.endpoint == "crobora":
-            df_total = fetchCroboraData()
-
-        print(f"Input size = {str(df_total.shape[0])} lines")
-
-        ### DADA PREPARATION : keep articles with at least one label associated, sort articles by alphabetic order, put labels all in lower case, etc. ###
-
-        df_article_sort = transform_data(df_total, int(args.occurrence))
-
+    if args.endpoint is not None and args.endpoint not in datasets:
         print(
-            "Number of unique items (articles) : "
-            + str(len(df_article_sort["article"].unique()))
+            "Please provide a valid endpoint. The endpoint "
+            + args.endpoint
+            + " is not registered."
         )
-        print(
-            "Number of unique labels (e.g. named entities) : "
-            + str(len(df_article_sort["label"].unique()))
+        sys.exit(0)
+
+    if args.input is not None:
+        df_total = pd.read_csv(args.input)
+    elif args.endpoint is not None and datasets[args.endpoint]["type"] == "rdf":
+        ## retrieve the data from SPARQL endpoint
+        df_total = query()
+    elif args.endpoint == "crobora":
+        df_total = fetchCroboraData()
+
+    print(f"Input size = {str(df_total.shape[0])} lines")
+
+    ### DADA PREPARATION : keep articles with at least one label associated, sort articles by alphabetic order, put labels all in lower case, etc. ###
+
+    df_article_sort = transform_data(df_total, int(args.occurrence))
+
+    print(
+        "Number of unique items (articles) : "
+        + str(len(df_article_sort["article"].unique()))
+    )
+    print(
+        "Number of unique labels (e.g. named entities) : "
+        + str(len(df_article_sort["label"].unique()))
+    )
+
+    matrix_one_hot = getMatrixCooccurrences(df_article_sort)
+    encoded_data = applyDimensionalityReduction(
+        matrix_one_hot, args.n_components, args.method
+    )
+
+    rules_no_clustering = []
+    if args.nocluster:
+        rules_no_clustering = rulesNoClustering(matrix_one_hot)
+        exportRules(rules_no_clustering, "no_cluster")
+
+    rules_communities = []
+    if args.community:
+        communities_wt = applyWalkTrap(matrix_one_hot)
+        rules_communities = rulesCommunities(matrix_one_hot, communities_wt)
+        exportRules(rules_communities, "community")
+
+    rules_clustering_total = []
+    if args.hac:
+        ## generate clusters from labels
+        groupe, new_cluster, index, index_of_cluster = clusteringCAH(encoded_data)
+        ## generate rules from clusters
+        rules_clustering = rulesClustering(
+            matrix_one_hot, groupe, index, new_cluster, index_of_cluster
         )
 
-        matrix_one_hot = getMatrixCooccurrences(df_article_sort)
-        encoded_data = applyDimensionalityReduction(
-            matrix_one_hot, args.n_components, args.method
+        ## find sub-clusters, if any, and generate rules from them
+        rules_reclustering = rulesNewCluter(
+            matrix_one_hot, new_cluster, index_of_cluster
         )
 
-        rules_no_clustering = []
-        if args.nocluster:
-            rules_no_clustering = rulesNoClustering(matrix_one_hot)
-            exportRules(rules_no_clustering, "no_cluster")
-
-        rules_communities = []
-        if args.community:
-            communities_wt = applyWalkTrap(matrix_one_hot)
-            rules_communities = rulesCommunities(matrix_one_hot, communities_wt)
-            exportRules(rules_communities, "community")
-
-        rules_clustering_total = []
-        if args.hac:
-            ## generate clusters from labels
-            groupe, new_cluster, index, index_of_cluster = clusteringCAH(encoded_data)
-            ## generate rules from clusters
-            rules_clustering = rulesClustering(
-                matrix_one_hot, groupe, index, new_cluster, index_of_cluster
-            )
-
-            ## find sub-clusters, if any, and generate rules from them
-            rules_reclustering = rulesNewCluter(
-                matrix_one_hot, new_cluster, index_of_cluster
-            )
-
-            ## combine all rules generated from clustering and remove duplicates (possible rules find in several clusters), keeping only the most relevant
-            rules_clustering_total = combineClusterRules(
-                rules_clustering, rules_reclustering
-            )
-            exportRules(rules_clustering_total, "clustering_final")
-
-        # all_rules_clustering_wt = rulesCommunityCluster(matrix_one_hot, communities_wt)
-
-        # exportRules(all_rules_clustering_wt, 'communities_clustering')
-
-        all_rules = rules_no_clustering.append(rules_clustering_total).append(
-            rules_communities
-        )  # .append(all_rules_clustering_wt)
-        all_rules.reset_index(inplace=True, drop=True)
-
-        print("All rules | Number of rules = ", all_rules.shape[0])
-        listToString(all_rules)
-        all_rules = all_rules.drop_duplicates(
-            subset=["antecedents", "consequents", "isSymmetric"]
+        ## combine all rules generated from clustering and remove duplicates (possible rules find in several clusters), keeping only the most relevant
+        rules_clustering_total = combineClusterRules(
+            rules_clustering, rules_reclustering
         )
-        stringToList(all_rules)
+        exportRules(rules_clustering_total, "clustering_final")
 
-        print(
-            "All rules | Number of rules after symmetric duplicate filter = ",
-            all_rules.shape[0],
-        )
-        exportRules(all_rules, "all_rules")
+    # all_rules_clustering_wt = rulesCommunityCluster(matrix_one_hot, communities_wt)
 
-        filename = f"data/config_{str(args.endpoint)}.json"
-        # verify if config file exists before
-        if exists(filename):
-            config = pd.read_json(filename)
-        else:
-            config = {
-                "lang": [],
-                "graph": [],
-                "min_interestingness": float(args.int),
-                "min_confidence": float(args.conf),
-                "methods": [
-                    {"label": "No clustering method", "key": "no_clustering"},
-                    {"label": "Clusters of labels", "key": "clust_"},
-                    {"label": "Communities of articles", "key": "wt_community"},
-                    {
-                        "label": "Combination of clusters and communities",
-                        "key": "communities",
-                    },
-                ],
-            }
+    # exportRules(all_rules_clustering_wt, 'communities_clustering')
 
-        config["graph"].append(args.graph)
+    all_rules = rules_no_clustering.append(rules_clustering_total).append(
+        rules_communities
+    )  # .append(all_rules_clustering_wt)
+    all_rules.reset_index(inplace=True, drop=True)
 
-        with open(filename, "w") as outfile:
-            json.dump(config, outfile, indent=4, sort_keys=False)
+    print("All rules | Number of rules = ", all_rules.shape[0])
+    listToString(all_rules)
+    all_rules = all_rules.drop_duplicates(
+        subset=["antecedents", "consequents", "isSymmetric"]
+    )
+    stringToList(all_rules)
+
+    print(
+        "All rules | Number of rules after symmetric duplicate filter = ",
+        all_rules.shape[0],
+    )
+    exportRules(all_rules, "all_rules")
+
+    filename = f"data/config_{str(args.endpoint)}.json"
+    # verify if config file exists before
+    if exists(filename):
+        config = pd.read_json(filename)
+    else:
+        config = {
+            "lang": [],
+            "graph": [],
+            "min_interestingness": float(args.int),
+            "min_confidence": float(args.conf),
+            "methods": [
+                {"label": "No clustering method", "key": "no_clustering"},
+                {"label": "Clusters of labels", "key": "clust_"},
+                {"label": "Communities of articles", "key": "wt_community"},
+                {
+                    "label": "Combination of clusters and communities",
+                    "key": "communities",
+                },
+            ],
+        }
+
+    config["graph"].append(args.graph)
+
+    with open(filename, "w") as outfile:
+        json.dump(config, outfile, indent=4, sort_keys=False)
