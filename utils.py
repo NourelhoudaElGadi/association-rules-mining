@@ -1,20 +1,14 @@
+from functools import wraps
+import time
 import pandas as pd
 
 import numpy as np
-import seaborn as sns
-#import matplotlib.pyplot as plt
 
 import SPARQLWrapper
 import json
 from SPARQLWrapper import SPARQLWrapper, JSON
 
 
-import networkx as nx
-# from cdlib import algorithms,viz
-
-import sklearn
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import MinMaxScaler
 
 from scipy.cluster.hierarchy import dendrogram, linkage, fcluster, ward
 import scipy.linalg.blas
@@ -22,18 +16,26 @@ import scipy.linalg.blas
 from mlxtend.frequent_patterns import association_rules
 from mlxtend.frequent_patterns import fpgrowth, fpmax
 
-from keras.models import Model
-from keras.layers import Input, Dense
-from keras import regularizers
+import umap
+
+from autoencoder import AutoEncoderDimensionReduction
 
 
-# from stellargraph.data import BiasedRandomWalk
-# from stellargraph import StellarGraph
+def timeit(func):
+    @wraps(func)
+    def timeit_wrapper(*args, **kwargs):
+        start_time = time.perf_counter()
+        result = func(*args, **kwargs)
+        end_time = time.perf_counter()
+        total_time = end_time - start_time
+        print(f'Function {func.__name__}{args} {kwargs} Took {total_time:.4f} seconds')
+        return result
+    return timeit_wrapper
 
 
-# from gensim.models import Word2Vec
 
 
+@timeit
 def sparql_service_to_dataframe(service, query):
     """
     Helper function to convert SPARQL results into a Pandas DataFrame.
@@ -50,26 +52,21 @@ def sparql_service_to_dataframe(service, query):
 
     out = []
     for row in processed_results['results']['bindings']:
-        item = []
-        for c in cols:
-            item.append(row.get(c, {}).get('value'))
+        item = [row.get(c, {}).get('value') for c in cols]
         out.append(item)
 
     return pd.DataFrame(out, columns=cols)
 
 
 def delete_Label_number(label):
-    delete = False
     k = 0
     for i in label:
         if (i.isdigit()):
             k = k + 1
-    if (k == len(label)):
-        delete = True
-
-    return delete
+    return k == len(label)
 
 
+@timeit
 def transform_data(df, min_occur):
     """
 
@@ -115,7 +112,7 @@ def transform_data(df, min_occur):
 
 def coocc_matrix_Label(one_hot_label):
     """
-     Create Labels co-occurencies matrix
+     Create Labels co-occurrences matrix
 
      Parameters :
         one_hot_label : DataFrame
@@ -132,6 +129,7 @@ def coocc_matrix_Label(one_hot_label):
     return coocc
 
 
+@timeit
 def elbow_method(one_hot, nb_max_cluster, metric):
     """
     Use the elbow method and a rule (having at least 2 groups with more than 50 articles) to determine the number of clusters
@@ -160,13 +158,14 @@ def elbow_method(one_hot, nb_max_cluster, metric):
         index = groupe.groupby([groupe.index]).count().index[groupe.groupby([groupe.index]).count()['article'] > 50]
         if ((acceleration > 0).sum() == 0):
             k = 0
-            groupe = groupe[0:0]
+            groupe = groupe[:0]
             index = []
             break
 
     return k, groupe, index
 
 
+@timeit
 def repeat_cluster(one_hot, group, index_cluster, nb_max_article, nb_cluster):
     """
 
@@ -190,7 +189,7 @@ def repeat_cluster(one_hot, group, index_cluster, nb_max_article, nb_cluster):
 
     return new_cluster, index_for_new_cluster
 
-
+@timeit
 def fp_growth(one_hot, max_len, min_confidence):
     """
 
@@ -200,13 +199,12 @@ def fp_growth(one_hot, max_len, min_confidence):
     """
 # / one_hot.shape[0]
     frequent_itemsets_fp = fpgrowth(one_hot, min_support=5 / one_hot.shape[0], max_len=max_len, use_colnames=True)
-    regles_fp = association_rules(frequent_itemsets_fp, metric="confidence", min_threshold=min_confidence).sort_values(
-        by='lift', ascending=False)
-
-    return regles_fp
-
+    return association_rules(
+        frequent_itemsets_fp, metric="confidence", min_threshold=min_confidence
+    ).sort_values(by='lift', ascending=False)
 
 
+@timeit
 def fp_growth_with_clustering(one_hot, group, index, max_len, min_confidence):
     """
     Apply FP-Growth algorithm and generate rules to each cluster.
@@ -241,7 +239,7 @@ def fp_growth_with_clustering(one_hot, group, index, max_len, min_confidence):
             regles_fp_clustering.append(pd.DataFrame([]))
     return regles_fp_clustering
 
-
+@timeit
 def fp_growth_with_community(one_hot, communities, max_len, min_confidence):
     """
     Apply FP-Growth algorithm and generate rules for selected clusters
@@ -381,6 +379,7 @@ def create_rules_df_community(regles_fp_clustering, interestingness):
     return rules_clustering
 
 
+@timeit
 def delete_redundant(rules):
     """
     Delete redundant rules. A rule is redundant if there is a subset of this rule with the same or higher confidence.
@@ -391,21 +390,30 @@ def delete_redundant(rules):
 
     redundant = []
     for i in rules.itertuples():
-        for j in rules.itertuples():
-            if (((i.antecedents.issubset(j.antecedents))
-                 and (i.consequents == j.consequents)
-                 and (i.confidence >= j.confidence)
-                 and (i.Index != j.Index)) or ((i.consequents.issubset(j.consequents))
-                                               and (i.antecedents == j.antecedents)
-                                               and (i.confidence >= j.confidence)
-                                               and (i.Index != j.Index))):
-                redundant.append(j.Index)
-
+        redundant.extend(
+            j.Index
+            for j in rules.itertuples()
+            if (
+                (
+                    (i.antecedents.issubset(j.antecedents))
+                    and (i.consequents == j.consequents)
+                    and (i.confidence >= j.confidence)
+                    and (i.Index != j.Index)
+                )
+                or (
+                    (i.consequents.issubset(j.consequents))
+                    and (i.antecedents == j.antecedents)
+                    and (i.confidence >= j.confidence)
+                    and (i.Index != j.Index)
+                )
+            )
+        )
     redundant = list(dict.fromkeys(redundant))
     rules = rules.drop(redundant)
     return rules
 
 
+@timeit
 def delete_redundant_clustering(rules_clustering):
     """
     Apply delete_redundant to each cluster
@@ -418,6 +426,7 @@ def delete_redundant_clustering(rules_clustering):
     return rules_without_redundant
 
 
+@timeit
 def delete_redundant_community(rules_clustering):
     """
     Apply delete_redundant to each cluster
@@ -430,7 +439,7 @@ def delete_redundant_community(rules_clustering):
     return rules_without_redundant
 
 
-
+@timeit
 def generate_article_rules(test, rules):
     """
     For each article in the test set,  the method checks if labels and pair of labels of the article
@@ -450,25 +459,24 @@ def generate_article_rules(test, rules):
                 new_rules_article.append(
                     list(rules[rules['antecedents'].eq({i})]['consequents']))
 
-            for j in test[test['article'] == article]['label']:
-                if (rules[rules['antecedents'].eq({i, j})].shape[0] != 0):
-                    new_rules_article.append(
-                        list(rules[rules['antecedents'].eq({i, j})]['consequents']))
-
+            new_rules_article.extend(
+                list(rules[rules['antecedents'].eq({i, j})]['consequents'])
+                for j in test[test['article'] == article]['label']
+                if (rules[rules['antecedents'].eq({i, j})].shape[0] != 0)
+            )
         new_rules.append(new_rules_article)
 
     new_rules_list = []
 
-    for i in range(len(new_rules)):
+    for new_rule in new_rules:
         rules_i = []
-        for j in range(len(new_rules[i])):
-            for k in range(len(new_rules[i][j])):
-                rules_i.append(list(new_rules[i][j][k])[0])
+        for j in range(len(new_rule)):
+            rules_i.extend(list(new_rule[j][k])[0] for k in range(len(new_rule[j])))
         new_rules_list.append(list(dict.fromkeys(rules_i)))
 
     return new_rules_list
 
-
+@timeit
 def elbow_method_community(one_hot, nb_max_cluster, metric):
     """
     Use the elbow method and a rule (having at least 2 groups with more than 50 articles) to determine the number of clusters
@@ -497,13 +505,14 @@ def elbow_method_community(one_hot, nb_max_cluster, metric):
         index = groupe.groupby([groupe.index]).count().index[groupe.groupby([groupe.index]).count()['Labels'] > 20]
         if ((acceleration > 0).sum() == 0):
             k = 0
-            groupe = groupe[0:0]
+            groupe = groupe[:0]
             index = []
             break
 
     return k, groupe, index
 
 
+@timeit
 def fp_growth_with_com_auto(one_hot, group, index, max_len, min_confidence):
     """
     Apply FP-Growth algorithm and generate rules to each cluster.
@@ -555,9 +564,61 @@ def interestingness_measure_com_auto(regles_fp_clustering, one_hot, group, index
         i = i + 1
     return regles_fp_clustering_new
 
+from scipy.sparse import csr_matrix
+from sklearn.decomposition import PCA, FastICA
+from sklearn.manifold import TSNE, Isomap, MDS, LocallyLinearEmbedding
 
-def rules_clustering_communities_autoenconder(one_hot, communities, nb_cluster, metrics,
-                                              max_length, min_confidence, interestingness):
+### Réduction du nombre de variables + Clustering
+# L'autoencoder permet de réduire la dimension et de pouvoir appliquer la CAH qui n'est pas robuste face à un nombre trop importants de variables
+def dimensionality_reduction(one_hot_matrix, n_components, method):
+    methods = {
+        "autoencoder": AutoEncoderDimensionReduction(
+            encoding_dim=n_components,
+            epochs=100,
+            batch_size=10,
+            lr=1e-2,
+        ),
+        "pca": PCA(n_components=n_components),
+        "tsne": TSNE(
+            n_components=n_components,
+            method="exact",
+            perplexity=30,
+            learning_rate=200,
+            n_iter=1000,
+        ),
+        "umap": umap.UMAP(n_components=n_components),
+        "isomap": Isomap(n_neighbors=5, n_components=n_components),
+        "mds": MDS(n_components=n_components),
+        "ica": FastICA(n_components=n_components),
+        "lle": LocallyLinearEmbedding(n_components=n_components),
+    }
+
+    # The above code is implementing dimensionality reduction techniques such as autoencoder, PCA, ICA,
+    # LLE, etc. on a given input matrix `one_hot_matrix`. If the chosen method is autoencoder, it creates
+    # an autoencoder model using Keras and trains it on the input matrix. If the chosen method is any
+    # other dimensionality reduction technique, it applies the chosen method on the input matrix and
+    # returns the reduced data in a pandas DataFrame format. The number of components for the
+    # dimensionality reduction is specified by the `n_components` parameter. The resulting reduced data is
+    # returned with column names based
+
+    # Convertir la matrice d'entrée en une matrice dense ou creuse selon la méthode choisie
+    if method in ["pca", "ica", "lle", "ica", "isomap", "mds"]:
+        one_hot_matrix_dense = csr_matrix(one_hot_matrix).toarray()
+    else:
+        one_hot_matrix_dense = one_hot_matrix.values
+
+    # Réduction de dimensionnalité
+    reducer = methods[method]
+    reduced_data = pd.DataFrame(reducer.fit_transform(one_hot_matrix_dense))
+
+    # Définition des noms de colonnes
+    reduced_data.columns = [method + "_" + str(i + 1) for i in range(n_components)]
+    reduced_data.index = one_hot_matrix.index
+
+    return reduced_data
+
+def rules_clustering_communities_reduction(one_hot, communities, nb_cluster, metrics,
+                                              max_length, min_confidence, interestingness, encoding_dim = 64, method = "pca"):
     """
     Generate Association rules after applying clustering method to
     one hot encoding matrix with only labels from the same community.
@@ -587,25 +648,17 @@ def rules_clustering_communities_autoenconder(one_hot, communities, nb_cluster, 
 
     all_rules_clustering_communities = pd.DataFrame()
 
+    
     for i in communities:
         label = [x for x in one_hot.columns if x.startswith('label_')]
-        label_drop = [x for x in label if not x in ["label_" + s for s in i]]
+        label_drop = [x for x in label if x not in ["label_" + s for s in i]]
         one_hot_cluster = one_hot.drop(label_drop, axis=1)
 
         input_dim = one_hot.shape[1]
-        encoding_dim = 64
         # Number of neurons in each Layer [8, 6, 4, 3, ...] of encoders
-        input_layer = Input(shape=(input_dim,))
-        encoder_layer_1 = Dense(256, activation="tanh", activity_regularizer=regularizers.l1(10e-5))(input_layer)
-        encoder_layer_2 = Dense(128, activation="tanh")(encoder_layer_1)
-        encoder_layer_3 = Dense(encoding_dim, activation="tanh")(encoder_layer_2)
-        encoder = Model(inputs=input_layer, outputs=encoder_layer_3)
-        # Use the model to predict the factors which sum up the information of interest rates.
-        encoded_data = pd.DataFrame(encoder.predict(one_hot))
-        encoded_data.index = one_hot_cluster.index
+        encoded_data = dimensionality_reduction(one_hot, encoding_dim, method=method)
 
-        nb_cluster_communities, groupe_communities, index_communities = elbow_method(encoded_data, nb_cluster,
-                                                                                     metrics)
+        nb_cluster_communities, groupe_communities, index_communities = elbow_method(encoded_data, nb_cluster,                                                                                     metrics)
 
         drop = [x for x in one_hot_cluster.columns if not x.startswith('label_')]
         one_hot_cluster = one_hot_cluster.drop(drop, axis=1)
@@ -613,7 +666,9 @@ def rules_clustering_communities_autoenconder(one_hot, communities, nb_cluster, 
 
         regles_fp_clustering_communities = fp_growth_with_clustering(one_hot_cluster, groupe_communities,
                                                                      index_communities, max_length, min_confidence)
-        print("Number of rules : " + str(pd.concat(regles_fp_clustering_communities).shape[0]))
+        print(
+            f"Number of rules : {str(pd.concat(regles_fp_clustering_communities).shape[0])}"
+        )
         regles_fp_clustering_communities = interestingness_measure_clustering(regles_fp_clustering_communities,
                                                                               one_hot_cluster, groupe_communities,
                                                                               index_communities)
@@ -623,8 +678,9 @@ def rules_clustering_communities_autoenconder(one_hot, communities, nb_cluster, 
         regles_clustering_communities_final = pd.DataFrame()
 
         for j in range(len(regles_clustering_communities)):
-            regles_clustering_communities[j]['cluster'] = "communities" + str(communities.index(i)) + "_clust" + str(
-                j + 1)
+            regles_clustering_communities[j][
+                'cluster'
+            ] = f"communities{str(communities.index(i))}_clust{str(j + 1)}"
             regles_clustering_communities_final = regles_clustering_communities_final.append(
                 regles_clustering_communities[j])
 
@@ -636,7 +692,7 @@ def rules_clustering_communities_autoenconder(one_hot, communities, nb_cluster, 
 
 
 def rules_clustering_communities_embedding_autoencoder(one_hot, groupe, index, nb_cluster, metrics,
-                                                       max_length, min_confidence, interestingness):
+                                                       max_length, min_confidence, interestingness, encoding_dim = 32, method = "pca"):
     """
     Generate Association rules after applying clustering method to
     one hot encoding matrix with only labels from the same community.
@@ -668,41 +724,39 @@ def rules_clustering_communities_embedding_autoencoder(one_hot, groupe, index, n
 
     for i in index:
         label = [x for x in one_hot.columns if x.startswith('Label_')]
-        label_drop = [x for x in label if not x in ["label_" + s for s in list(groupe[groupe.index == i]['Labels'])]]
+        label_drop = [
+            x
+            for x in label
+            if x
+            not in [
+                "label_" + s for s in list(groupe[groupe.index == i]['Labels'])
+            ]
+        ]
         one_hot_cluster = one_hot.drop(label_drop, axis=1)
-        input_dim = one_hot_cluster.shape[1]
         encoding_dim = 32
-        # Number of neurons in each Layer [8, 6, 4, 3, ...] of encoders
-        input_layer = Input(shape=(input_dim,))
-        encoder_layer_1 = Dense(100, activation="tanh")(input_layer)
-        encoder_layer_2 = Dense(encoding_dim, activation="tanh",
-                                kernel_regularizer=regularizers.l1_l2(l1=0.001, l2=0.01))(encoder_layer_1)
-        encoder = Model(inputs=input_layer, outputs=encoder_layer_2)
-        # Use the model to predict the factors which sum up the information of interest rates.
-        encoded_data = pd.DataFrame(encoder.predict(one_hot_cluster))
-        encoded_data.index = one_hot_cluster.index
+        encoded_data = dimensionality_reduction(one_hot_cluster, encoding_dim, method=method)
 
-        nb_cluster_communities, groupe_communities, index_communities = elbow_method(encoded_data, nb_cluster,
-                                                                                     metrics)
+        nb_cluster_communities, groupe_communities, index_communities = elbow_method(encoded_data, nb_cluster, metrics)
 
         drop = [x for x in one_hot_cluster.columns if not x.startswith('label_')]
         one_hot_cluster = one_hot_cluster.drop(drop, axis=1)
         one_hot_cluster.columns = list(pd.DataFrame(one_hot_cluster.columns)[0].apply(lambda x: x.split('_')[-1]))
 
-        regles_fp_clustering_communities = fp_growth_with_clustering(one_hot_cluster, groupe_communities,
-                                                                     index_communities, max_length, min_confidence)
-        print("Number of rules : " + str(pd.concat(regles_fp_clustering_communities).shape[0]))
+        regles_fp_clustering_communities = fp_growth_with_clustering(one_hot_cluster, groupe_communities, index_communities, max_length, min_confidence)
+        print(
+            f"Number of rules : {str(pd.concat(regles_fp_clustering_communities).shape[0])}"
+        )
         regles_fp_clustering_communities = interestingness_measure_clustering(regles_fp_clustering_communities,
-                                                                              one_hot_cluster, groupe_communities,
-                                                                              index_communities)
+                                                                              one_hot_cluster, groupe_communities, index_communities)
         regles_fp_clustering_communities = delete_redundant_clustering(regles_fp_clustering_communities)
         regles_clustering_communities = create_rules_df_clustering(regles_fp_clustering_communities, interestingness)
 
         regles_clustering_communities_final = pd.DataFrame()
 
         for j in range(len(regles_clustering_communities)):
-            regles_clustering_communities[j]['cluster'] = "communities" + str(i + 1) + "_clust" + str(
-                j + 1)
+            regles_clustering_communities[j][
+                'cluster'
+            ] = f"communities{str(i + 1)}_clust{str(j + 1)}"
             regles_clustering_communities_final = regles_clustering_communities_final.append(
                 regles_clustering_communities[j])
 
@@ -723,10 +777,9 @@ def dataframe_difference(df1, df2):
     return diff_df.shape[0]
 
 
-def comparison(rules1,rules2) :
-    print("Number of rules 1 : " + str(rules1.shape[0]))
-    print("Number of rules 2 : " + str(rules2.shape[0]))
+def comparison(rules1,rules2):
+    print(f"Number of rules 1 : {str(rules1.shape[0])}")
+    print(f"Number of rules 2 : {str(rules2.shape[0])}")
     print("Number of same rows : " + str(dataframe_difference(rules1.loc[:,['antecedents','consequents']],rules2.loc[:,['antecedents','consequents']])))
     print("Number of same rows among top 10 most interesting rules : " + str(dataframe_difference(rules1.sort_values(by=['confidence','interestingness'],ascending=False).loc[:,['antecedents','consequents']].head(10),rules2.sort_values(by=['confidence','interestingness'],ascending=False).loc[:,['antecedents','consequents']].head(10))))
     print("Number of same rows among top 20 most interesting rules : " + str(dataframe_difference(rules1.sort_values(by=['confidence','interestingness'],ascending=False).loc[:,['antecedents','consequents']].head(20),rules2.sort_values(by=['confidence','interestingness'],ascending=False).loc[:,['antecedents','consequents']].head(20))))
-
