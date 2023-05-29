@@ -19,8 +19,6 @@ import networkx as nx
 from cdlib import algorithms
 
 
-
-
 # import urllib library
 from urllib.request import urlopen
 import urllib.parse
@@ -85,7 +83,7 @@ parser.add_argument(
     "--community",
     help="Compute rules using a Community Detection method to cluster transactions. Default is False.",
     action=argparse.BooleanOptionalAction,
-    default=False ,
+    default=False,
     required=False,
 )
 parser.add_argument(
@@ -162,7 +160,7 @@ def query():
     data_path = Path("data")
     if not data_path.exists():
         data_path.mkdir()
-    
+
     datafile = (
         "data/input_data_"
         + args.endpoint
@@ -253,6 +251,7 @@ def fetch_crobora_data():
 
 # Creation of the co-occurrence matrix, which is the dataset for clustering
 
+
 @timeit
 def compute_cooccurrence_matrix(df_article_sort):
     ### METTRE TOUT EN string + spécifier que Label et year sont des catégories pour le one-hot-encoding ###
@@ -302,8 +301,9 @@ def compute_cooccurrence_matrix(df_article_sort):
 
     return one_hot_label
 
+
 @timeit
-def clusteringCAH(encoded_data):
+def clustering_CAH(encoded_data):
     nb_cluster, groupe, index = elbow_method(encoded_data, 10, "cosine")
 
     groupe[groupe.index.isin(index)].groupby(
@@ -318,7 +318,7 @@ def clusteringCAH(encoded_data):
 
 
 ### Community alogrithms (Walk Trap)
-def applyWalkTrap(one_hot_label):
+def walk_trap(one_hot_label):
     ## Co-occurencies matrix
     coooc_s = coocc_matrix_Label(one_hot_label)
 
@@ -336,6 +336,7 @@ def applyWalkTrap(one_hot_label):
 
     com_wt = algorithms.walktrap(G)
     return com_wt.communities
+
 
 @timeit
 def extract_rules_no_clustering(one_hot_matrix):
@@ -363,6 +364,7 @@ def extract_rules_no_clustering(one_hot_matrix):
     print(f"No clustering | Number of rules : {str(regles.shape[0])}")
 
     return regles
+
 
 @timeit
 def rules_communities(one_hot_label, communities_wt):
@@ -395,6 +397,7 @@ def rules_communities(one_hot_label, communities_wt):
     print(f"Communities clustering | Number of rules = {str(all_rules_wt.shape[0])}")
 
     return all_rules_wt
+
 
 @timeit
 def rules_clustering(one_hot_label, groupe, index, new_cluster, index_of_cluster):
@@ -437,8 +440,9 @@ def rules_clustering(one_hot_label, groupe, index, new_cluster, index_of_cluster
     # regles_clustering_final.head()
     return regles_clustering_final
 
+
 @timeit
-def rulesNewCluter(one_hot_label, new_cluster, index_of_cluster):
+def rules_new_cluter(one_hot_label, new_cluster, index_of_cluster):
     ### SI ON A REPETE LE CLUSTERING POUR DIMINUER LE NOMBRE D'ARTICLES DANS CERTAINES CLASSES ALORS ON APPLIQUE SUR CES NOUVELLES CLASSE ###
 
     regles_fp_clustering_reclust = []
@@ -602,7 +606,6 @@ if __name__ == "__main__":
     print("Input data path = ", args.input)
     print("Output data file = ", args.filename)
 
-
     args.append = args.append == "True"
 
     if args.endpoint is None and args.input is None:
@@ -618,8 +621,10 @@ if __name__ == "__main__":
             + " is not registered."
         )
         sys.exit(0)
-    
-    path_suffix = f"_{args.graph}_{args.endpoint}_{args.occurrence}_{args.conf}_{args.int}"
+
+    path_suffix = (
+        f"_{args.graph}_{args.endpoint}_{args.occurrence}_{args.conf}_{args.int}"
+    )
 
     if args.input is not None:
         df_total = pd.read_csv(args.input)
@@ -633,19 +638,15 @@ if __name__ == "__main__":
 
     ### DATA PREPARATION : keep articles with at least one label associated, sort articles by alphabetic order, put labels all in lower case, etc. ###
 
-
-
-
-
     matrix_path = Path(f"data/matrix_one_hot{path_suffix}.csv")
-    
+
     if matrix_path.exists():
         matrix_one_hot = pd.read_csv(matrix_path)
     else:
         df_article_sort = transform_data(df_total, int(args.occurrence))
         print(
-        "Number of unique items (articles) : "
-        + str(len(df_article_sort["article"].unique()))
+            "Number of unique items (articles) : "
+            + str(len(df_article_sort["article"].unique()))
         )
         print(
             "Number of unique labels (e.g. named entities) : "
@@ -653,16 +654,16 @@ if __name__ == "__main__":
         )
         matrix_one_hot = compute_cooccurrence_matrix(df_article_sort)
         matrix_one_hot.to_csv(matrix_path, index=False)
-    
-    encoded_path = Path(f"data/encoded_data{path_suffix}_NC{args.n_components}_{args.method}.csv")
+
+    encoded_path = Path(
+        f"data/encoded_data{path_suffix}_NC{args.n_components}_{args.method}.csv"
+    )
     if encoded_path.exists():
         encoded_data = pd.read_csv(encoded_path)
     else:
         encoded_data = dimensionality_reduction(
             matrix_one_hot, args.n_components, args.method
         )
-    
-    
 
     rules_no_clustering = []
     if args.nocluster:
@@ -671,21 +672,21 @@ if __name__ == "__main__":
 
     rules_communities = []
     if args.community:
-        communities_wt = applyWalkTrap(matrix_one_hot)
+        communities_wt = walk_trap(matrix_one_hot)
         rules_communities = rules_communities(matrix_one_hot, communities_wt)
         export_rules(rules_communities, "community")
 
     rules_clustering_total = []
     if args.hac:
         ## generate clusters from labels
-        groupe, new_cluster, index, index_of_cluster = clusteringCAH(encoded_data)
+        groupe, new_cluster, index, index_of_cluster = clustering_CAH(encoded_data)
         ## generate rules from clusters
         rules_clustering = rules_clustering(
             matrix_one_hot, groupe, index, new_cluster, index_of_cluster
         )
 
         ## find sub-clusters, if any, and generate rules from them
-        rules_reclustering = rulesNewCluter(
+        rules_reclustering = rules_new_cluter(
             matrix_one_hot, new_cluster, index_of_cluster
         )
 

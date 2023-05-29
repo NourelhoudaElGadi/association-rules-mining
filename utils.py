@@ -575,8 +575,8 @@ def dimensionality_reduction(one_hot_matrix, n_components, method):
         "autoencoder": AutoEncoderDimensionReduction(
             encoding_dim=n_components,
             epochs=100,
-            batch_size=10,
-            lr=1e-2,
+            batch_size=128,
+            lr=1e-3,
         ),
         "pca": PCA(n_components=n_components),
         "tsne": TSNE(
