@@ -1,34 +1,15 @@
 from base64 import encode
+from pathlib import Path
 import warnings
 
 warnings.filterwarnings("ignore")
 
 
 import pandas as pd
-from sklearn.decomposition import PCA
 
-from sklearn.decomposition import PCA
-from scipy.sparse import csr_matrix
-
-from sklearn.manifold import TSNE
-
-
-from sklearn.manifold import LocallyLinearEmbedding
-from scipy.sparse import csr_matrix
-
-import umap.umap_ as umap
-
-from sklearn.manifold import Isomap, MDS
-from sklearn.decomposition import PCA, FastICA
-from sklearn.manifold import MDS
-
-from sklearn.manifold import MDS
 import pandas as pd
 
-from sklearn.manifold import Isomap, MDS
-from scipy.sparse import csr_matrix
 
-from sklearn.manifold import TSNE
 import numpy as np
 
 import json
@@ -37,9 +18,7 @@ import json
 import networkx as nx
 from cdlib import algorithms
 
-from scipy.sparse import csr_matrix
-from sklearn.decomposition import PCA, FastICA
-from sklearn.manifold import TSNE, Isomap, MDS, LocallyLinearEmbedding
+
 
 
 # import urllib library
@@ -97,26 +76,30 @@ parser.add_argument(
 
 parser.add_argument(
     "--nocluster",
-    help="Compute rules without any kind of clustering. Default is True.",
-    default=True,
+    action=argparse.BooleanOptionalAction,
+    help="Compute rules without any kind of clustering. Default is False.",
+    default=False,
     required=False,
 )
 parser.add_argument(
     "--community",
-    help="Compute rules using a Community Detection method to cluster transactions. Default is True.",
-    default=True,
+    help="Compute rules using a Community Detection method to cluster transactions. Default is False.",
+    action=argparse.BooleanOptionalAction,
+    default=False ,
     required=False,
 )
 parser.add_argument(
     "--hac",
-    help="Compute rules using a hierarchial agglomerative (i.e., bottom-up) clustering (HAC) of transactions. Default is True.",
-    default=True,
+    help="Compute rules using a hierarchial agglomerative (i.e., bottom-up) clustering (HAC) of transactions. Default is False.",
+    action=argparse.BooleanOptionalAction,
+    default=False,
     required=False,
 )
 parser.add_argument(
     "--clustercombo",
-    help="Compute rules by combining both clustering methods (i.e. HAC and Community Detection). Default is True.",
-    default=True,
+    help="Compute rules by combining both clustering methods (i.e. HAC and Community Detection). Default is False.",
+    action=argparse.BooleanOptionalAction,
+    default=False,
     required=False,
 )
 parser.add_argument(
@@ -173,9 +156,13 @@ def query():
         )
         list_total.append(df_query)
 
-    ## Concatenate all the dataframe from the list ##
+    ## Concatenate all the dataframes from the list ##
     df_total = pd.concat(list_total)
 
+    data_path = Path("data")
+    if not data_path.exists():
+        data_path.mkdir()
+    
     datafile = (
         "data/input_data_"
         + args.endpoint
@@ -189,16 +176,16 @@ def query():
     return df_total
 
 
-def fetchData(url):
+def fetch_data(url):
     try:
         response = urlopen(url)
         return json.loads(response.read())
-    except:
+    except Exception:
         print("Error in ", url)
         return None
 
 
-def fetchCroboraData():
+def fetch_crobora_data():
     url = datasets[args.endpoint]["labels"]
 
     datafile = "data/input_data_" + args.endpoint + ".csv"
@@ -208,7 +195,7 @@ def fetchCroboraData():
     if isinstance(url, list):
         for u in url:
             # response = urlopen(u) # store the response of URL
-            data_json += fetchData(u)
+            data_json += fetch_data(u)
 
     data = []
 
@@ -237,7 +224,7 @@ def fetchCroboraData():
             continue
 
         # response = urlopen(data_url)
-        value_json = fetchData(data_url)
+        value_json = fetch_data(data_url)
         if value_json is None:
             continue
 
@@ -264,8 +251,10 @@ def fetchCroboraData():
     return data_df
 
 
-# Création de la matrice de co-occurences qui est notre jeu de données pour le clustering
-def getMatrixCooccurrences(df_article_sort):
+# Creation of the co-occurrence matrix, which is the dataset for clustering
+
+@timeit
+def compute_cooccurrence_matrix(df_article_sort):
     ### METTRE TOUT EN string + spécifier que Label et year sont des catégories pour le one-hot-encoding ###
     df_article_sort[["label"]].drop_duplicates()
 
@@ -313,57 +302,7 @@ def getMatrixCooccurrences(df_article_sort):
 
     return one_hot_label
 
-
-### Réduction du nombre de variables + Clustering
-# L'autoencoder permet de réduire la dimension et de pouvoir appliquer la CAH qui n'est pas robuste face à un nombre trop importants de variables
-def applyDimensionalityReduction(one_hot_matrix, n_components, method):
-    methods = {
-        "autoencoder": AutoEncoderDimensionReduction(
-            encoding_dim=n_components,
-            epochs=100,
-            batch_size=128,
-            lr=1e3,
-        ),
-        "pca": PCA(n_components=n_components),
-        "tsne": TSNE(
-            n_components=n_components,
-            method="exact",
-            perplexity=30,
-            learning_rate=200,
-            n_iter=1000,
-        ),
-        "umap": umap.UMAP(n_components=n_components),
-        "isomap": Isomap(n_neighbors=5, n_components=n_components),
-        "mds": MDS(n_components=n_components),
-        "ica": FastICA(n_components=n_components),
-        "lle": LocallyLinearEmbedding(n_components=n_components),
-    }
-
-    # The above code is implementing dimensionality reduction techniques such as autoencoder, PCA, ICA,
-    # LLE, etc. on a given input matrix `one_hot_matrix`. If the chosen method is autoencoder, it creates
-    # an autoencoder model using Keras and trains it on the input matrix. If the chosen method is any
-    # other dimensionality reduction technique, it applies the chosen method on the input matrix and
-    # returns the reduced data in a pandas DataFrame format. The number of components for the
-    # dimensionality reduction is specified by the `n_components` parameter. The resulting reduced data is
-    # returned with column names based
-
-    # Convertir la matrice d'entrée en une matrice dense ou creuse selon la méthode choisie
-    if method in ["pca", "ica", "lle", "ica", "isomap", "mds"]:
-        one_hot_matrix_dense = csr_matrix(one_hot_matrix).toarray()
-    else:
-        one_hot_matrix_dense = one_hot_matrix.values
-
-    # Réduction de dimensionnalité
-    reducer = methods[method]
-    reduced_data = pd.DataFrame(reducer.fit_transform(one_hot_matrix_dense))
-
-    # Définition des noms de colonnes
-    reduced_data.columns = [method + "_" + str(i + 1) for i in range(n_components)]
-    reduced_data.index = one_hot_matrix.index
-
-    return reduced_data
-
-
+@timeit
 def clusteringCAH(encoded_data):
     nb_cluster, groupe, index = elbow_method(encoded_data, 10, "cosine")
 
@@ -398,8 +337,8 @@ def applyWalkTrap(one_hot_label):
     com_wt = algorithms.walktrap(G)
     return com_wt.communities
 
-
-def rulesNoClustering(one_hot_matrix):
+@timeit
+def extract_rules_no_clustering(one_hot_matrix):
     regles_fp = fp_growth(one_hot_matrix, 3, float(args.conf))
 
     print(
@@ -425,8 +364,8 @@ def rulesNoClustering(one_hot_matrix):
 
     return regles
 
-
-def rulesCommunities(one_hot_label, communities_wt):
+@timeit
+def rules_communities(one_hot_label, communities_wt):
     regles_communities_wt = fp_growth_with_community(
         one_hot_label, communities_wt, 3, float(args.conf)
     )
@@ -457,8 +396,8 @@ def rulesCommunities(one_hot_label, communities_wt):
 
     return all_rules_wt
 
-
-def rulesClustering(one_hot_label, groupe, index, new_cluster, index_of_cluster):
+@timeit
+def rules_clustering(one_hot_label, groupe, index, new_cluster, index_of_cluster):
     regles_fp_clustering = fp_growth_with_clustering(
         one_hot_label, groupe, index, 3, float(args.conf)
     )
@@ -498,7 +437,7 @@ def rulesClustering(one_hot_label, groupe, index, new_cluster, index_of_cluster)
     # regles_clustering_final.head()
     return regles_clustering_final
 
-
+@timeit
 def rulesNewCluter(one_hot_label, new_cluster, index_of_cluster):
     ### SI ON A REPETE LE CLUSTERING POUR DIMINUER LE NOMBRE D'ARTICLES DANS CERTAINES CLASSES ALORS ON APPLIQUE SUR CES NOUVELLES CLASSE ###
 
@@ -553,18 +492,18 @@ def rulesNewCluter(one_hot_label, new_cluster, index_of_cluster):
     return pd.concat(regles_reclustering_final)
 
 
-def listToString(df):
+def list_to_string(df):
     # transform lists into strings to use in drop_duplicates
     df["antecedents"] = [",".join(map(str, l)) for l in df["antecedents"]]
     df["consequents"] = [",".join(map(str, l)) for l in df["consequents"]]
 
 
-def stringToList(df):
+def string_to_list(df):
     df["antecedents"] = [x.split(",") for x in df["antecedents"]]
     df["consequents"] = [x.split(",") for x in df["consequents"]]
 
 
-def combineClusterRules(regles_clustering_final, regles_reclustering_final):
+def combine_cluster_rules(regles_clustering_final, regles_reclustering_final):
     ### REGROUPEMENT DE TOUTES LES REGLES DES CLUSTERS  + SUPPRESSION SI MEME REGLE DANS PLUSIEURS CLUSTERS###
 
     rules_clustering = regles_clustering_final.append(regles_reclustering_final)
@@ -572,7 +511,7 @@ def combineClusterRules(regles_clustering_final, regles_reclustering_final):
     print(f"Clustering | Total number of rules = {str(rules_clustering.shape[0])}")
 
     # transform lists into strings to use in drop_duplicates
-    listToString(rules_clustering)
+    list_to_string(rules_clustering)
 
     # remove duplicates, keeping only the duplicate with highest confidence
     rules_clustering = (
@@ -582,7 +521,7 @@ def combineClusterRules(regles_clustering_final, regles_reclustering_final):
     )
 
     # transform strings back into lists for exporting
-    stringToList(rules_clustering)
+    string_to_list(rules_clustering)
 
     print(
         "Clustering | Total number of rules after duplicate filter = "
@@ -593,13 +532,13 @@ def combineClusterRules(regles_clustering_final, regles_reclustering_final):
 
 
 # Application à Community detection + Clustering (on regroupe article et label)
-def rulesCommunityCluster(one_hot, communities_wt):
-    all_rules_clustering_wt = rules_clustering_communities_autoenconder(
+def rules_community_cluster(one_hot, communities_wt):
+    all_rules_clustering_wt = rules_clustering_communities_reduction(
         one_hot, communities_wt, 20, "cosine", 3, float(args.conf), float(args.int)
     )
 
     # transform lists into strings to use in drop_duplicates
-    listToString(all_rules_clustering_wt)
+    list_to_string(all_rules_clustering_wt)
 
     # remove duplicates, keeping only the duplicate with highest confidence
     all_rules_clustering_wt = (
@@ -609,7 +548,7 @@ def rulesCommunityCluster(one_hot, communities_wt):
     )
 
     # transform strings back into lists for exporting
-    stringToList(all_rules_clustering_wt)
+    string_to_list(all_rules_clustering_wt)
 
     print(
         "Clustering article/label | Number of rules = "
@@ -619,7 +558,7 @@ def rulesCommunityCluster(one_hot, communities_wt):
     return all_rules_clustering_wt
 
 
-def fileName(cluster):
+def filename(cluster):
     if args.filename:
         return args.filename + "_" + cluster + ".json"
 
@@ -631,14 +570,14 @@ def fileName(cluster):
     return "data/rules" + dataset + graph + "_" + cluster + ".json"
 
 
-def exportRules(rules_df, cluster):
+def export_rules(rules_df, cluster):
     if args.graph:
         rules_df["graph"] = args.graph
 
     rules_df["source"] = rules_df["antecedents"]
     rules_df["target"] = rules_df["consequents"]
 
-    filename = fileName(cluster)
+    filename = filename(cluster)
     print("Filename: " + filename)
 
     rules_df.to_json(path_or_buf=filename, orient="records")
@@ -663,9 +602,6 @@ if __name__ == "__main__":
     print("Input data path = ", args.input)
     print("Output data file = ", args.filename)
 
-    args.nocluster = args.nocluster != "False"
-    args.community = args.nocluster != "False"
-    args.hac = args.nocluster != "False"
 
     args.append = args.append == "True"
 
@@ -682,6 +618,8 @@ if __name__ == "__main__":
             + " is not registered."
         )
         sys.exit(0)
+    
+    path_suffix = f"_{args.graph}_{args.endpoint}_{args.occurrence}_{args.conf}_{args.int}"
 
     if args.input is not None:
         df_total = pd.read_csv(args.input)
@@ -689,45 +627,60 @@ if __name__ == "__main__":
         ## retrieve the data from SPARQL endpoint
         df_total = query()
     elif args.endpoint == "crobora":
-        df_total = fetchCroboraData()
+        df_total = fetch_crobora_data()
 
     print(f"Input size = {str(df_total.shape[0])} lines")
 
-    ### DADA PREPARATION : keep articles with at least one label associated, sort articles by alphabetic order, put labels all in lower case, etc. ###
+    ### DATA PREPARATION : keep articles with at least one label associated, sort articles by alphabetic order, put labels all in lower case, etc. ###
 
-    df_article_sort = transform_data(df_total, int(args.occurrence))
 
-    print(
+
+
+
+    matrix_path = Path(f"data/matrix_one_hot{path_suffix}.csv")
+    
+    if matrix_path.exists():
+        matrix_one_hot = pd.read_csv(matrix_path)
+    else:
+        df_article_sort = transform_data(df_total, int(args.occurrence))
+        print(
         "Number of unique items (articles) : "
         + str(len(df_article_sort["article"].unique()))
-    )
-    print(
-        "Number of unique labels (e.g. named entities) : "
-        + str(len(df_article_sort["label"].unique()))
-    )
-
-    matrix_one_hot = getMatrixCooccurrences(df_article_sort)
-    encoded_data = applyDimensionalityReduction(
-        matrix_one_hot, args.n_components, args.method
-    )
+        )
+        print(
+            "Number of unique labels (e.g. named entities) : "
+            + str(len(df_article_sort["label"].unique()))
+        )
+        matrix_one_hot = compute_cooccurrence_matrix(df_article_sort)
+        matrix_one_hot.to_csv(matrix_path, index=False)
+    
+    encoded_path = Path(f"data/encoded_data{path_suffix}_NC{args.n_components}_{args.method}.csv")
+    if encoded_path.exists():
+        encoded_data = pd.read_csv(encoded_path)
+    else:
+        encoded_data = dimensionality_reduction(
+            matrix_one_hot, args.n_components, args.method
+        )
+    
+    
 
     rules_no_clustering = []
     if args.nocluster:
-        rules_no_clustering = rulesNoClustering(matrix_one_hot)
-        exportRules(rules_no_clustering, "no_cluster")
+        rules_no_clustering = extract_rules_no_clustering(matrix_one_hot)
+        export_rules(rules_no_clustering, "no_cluster")
 
     rules_communities = []
     if args.community:
         communities_wt = applyWalkTrap(matrix_one_hot)
-        rules_communities = rulesCommunities(matrix_one_hot, communities_wt)
-        exportRules(rules_communities, "community")
+        rules_communities = rules_communities(matrix_one_hot, communities_wt)
+        export_rules(rules_communities, "community")
 
     rules_clustering_total = []
     if args.hac:
         ## generate clusters from labels
         groupe, new_cluster, index, index_of_cluster = clusteringCAH(encoded_data)
         ## generate rules from clusters
-        rules_clustering = rulesClustering(
+        rules_clustering = rules_clustering(
             matrix_one_hot, groupe, index, new_cluster, index_of_cluster
         )
 
@@ -737,10 +690,10 @@ if __name__ == "__main__":
         )
 
         ## combine all rules generated from clustering and remove duplicates (possible rules find in several clusters), keeping only the most relevant
-        rules_clustering_total = combineClusterRules(
+        rules_clustering_total = combine_cluster_rules(
             rules_clustering, rules_reclustering
         )
-        exportRules(rules_clustering_total, "clustering_final")
+        export_rules(rules_clustering_total, "clustering_final")
 
     # all_rules_clustering_wt = rulesCommunityCluster(matrix_one_hot, communities_wt)
 
@@ -752,17 +705,17 @@ if __name__ == "__main__":
     all_rules.reset_index(inplace=True, drop=True)
 
     print("All rules | Number of rules = ", all_rules.shape[0])
-    listToString(all_rules)
+    list_to_string(all_rules)
     all_rules = all_rules.drop_duplicates(
         subset=["antecedents", "consequents", "isSymmetric"]
     )
-    stringToList(all_rules)
+    string_to_list(all_rules)
 
     print(
         "All rules | Number of rules after symmetric duplicate filter = ",
         all_rules.shape[0],
     )
-    exportRules(all_rules, "all_rules")
+    export_rules(all_rules, "all_rules")
 
     filename = f"data/config_{str(args.endpoint)}.json"
     # verify if config file exists before
