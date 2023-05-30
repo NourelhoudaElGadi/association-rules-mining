@@ -254,7 +254,7 @@ def fetch_crobora_data():
 
 @timeit
 def compute_cooccurrence_matrix(df_article_sort):
-    ### METTRE TOUT EN string + spécifier que Label et year sont des catégories pour le one-hot-encoding ###
+    # Convert the article column to string and specify that label and year are categories for the one-hot-encoding
     df_article_sort[["label"]].drop_duplicates()
 
     train = df_article_sort.astype({"article": str, "label": str})
@@ -285,14 +285,14 @@ def compute_cooccurrence_matrix(df_article_sort):
         )
         i = i + 5000
 
-    ### Remplacer les NaN par 0 et supprimer les lignes avec que des 0 ###
+    # Replace NaN by 0 and delete the rows with only 0
     one_hot = one_hot.fillna(0)
     one_hot = one_hot.loc[:, (one_hot != 0).any(axis=0)]
 
-    ### Passer la matrice en type Sparse pour accélérer les calculs ###
+    # Convert the one-hot-encoded matrix to sparse type to reduce the memory usage
     one_hot = one_hot.astype("Sparse[int]")
 
-    ## Supprimer les variables "year" si on ne veut pas les prendre en compte dans l'analyse ##
+    # Delete the year columns if we don't want to take them into account in the analysis
     drop = [x for x in one_hot.columns if not x.startswith("label_")]
     one_hot_label = one_hot.drop(drop, axis=1)
     one_hot_label.columns = list(
@@ -317,12 +317,12 @@ def clustering_CAH(encoded_data):
     return groupe, new_cluster, index, index_of_cluster
 
 
-### Community alogrithms (Walk Trap)
+### Community detection algorithm (Walk Trap)
 def walk_trap(one_hot_label):
-    ## Co-occurencies matrix
+    ## Co-occurrence matrix
     coooc_s = coocc_matrix_Label(one_hot_label)
 
-    ## Créer des tuples avec co-occurences différentes de 0 ##
+    ## Creating tuples with co-occurrence frequencies higher than 0##
     labels = one_hot_label.columns
     tuple_list = []
     for i in range(len(coooc_s)):
@@ -331,8 +331,8 @@ def walk_trap(one_hot_label):
     ## Create Graph ##
     G = nx.Graph()
 
-    for egde in tuple_list:
-        G.add_edge(egde[0], egde[1], weight=egde[2])
+    for edge in tuple_list:
+        G.add_edge(edge[0], edge[1], weight=edge[2])
 
     com_wt = algorithms.walktrap(G)
     return com_wt.communities
@@ -340,59 +340,59 @@ def walk_trap(one_hot_label):
 
 @timeit
 def extract_rules_no_clustering(one_hot_matrix):
-    regles_fp = fp_growth(one_hot_matrix, 3, float(args.conf))
+    rules_fp = fp_growth(one_hot_matrix, 3, float(args.conf))
 
     print(
-        f"No clustering | Number of rules before filtering = {str(regles_fp.shape[0])}"
+        f"No clustering | Number of rules before filtering = {str(rules_fp.shape[0])}"
     )
 
-    ### POST-PROCESSING : interestingness + règles redondantes ###
-    regles_fp = interestingness_measure(regles_fp, one_hot_matrix)
-    regles_fp = delete_redundant(regles_fp)
+    ### POST-PROCESSING : interestingness + removal of redundant rules ###
+    rules_fp = interestingness_measure(rules_fp, one_hot_matrix)
+    rules_fp = delete_redundant(rules_fp)
     print(
         "No clustering | Number of rules after redundancy filter = "
-        + str(regles_fp.shape[0])
+        + str(rules_fp.shape[0])
     )
-    regles = create_rules_df(regles_fp, float(args.int))
+    rules = create_rules_df(rules_fp, float(args.int))
     print(
         "No clustering | Number of rules after interestingness filter = "
-        + str(regles_fp.shape[0])
+        + str(rules_fp.shape[0])
     )
 
-    regles["cluster"] = "no_clustering"
+    rules["cluster"] = "no_clustering"
 
-    print(f"No clustering | Number of rules : {str(regles.shape[0])}")
+    print(f"No clustering | Number of rules : {str(rules.shape[0])}")
 
-    return regles
+    return rules
 
 
 @timeit
 def rules_communities(one_hot_label, communities_wt):
-    regles_communities_wt = fp_growth_with_community(
+    rules_communities_wt = fp_growth_with_community(
         one_hot_label, communities_wt, 3, float(args.conf)
     )
     print(
         "Communities clustering | Number of rules before filtering = "
-        + str(pd.concat(regles_communities_wt).shape[0])
+        + str(pd.concat(rules_communities_wt).shape[0])
     )
-    regles_communities_wt = interestingness_measure_community(
-        regles_communities_wt, one_hot_label, communities_wt
+    rules_communities_wt = interestingness_measure_community(
+        rules_communities_wt, one_hot_label, communities_wt
     )
-    regles_communities_wt = delete_redundant_community(regles_communities_wt)
+    rules_communities_wt = delete_redundant_community(rules_communities_wt)
     print(
         "Communities clustering | Number of rules after redundancy filter = "
-        + str(pd.concat(regles_communities_wt).shape[0])
+        + str(pd.concat(rules_communities_wt).shape[0])
     )
-    regles_wt = create_rules_df_community(regles_communities_wt, float(args.int))
+    rules_wt = create_rules_df_community(rules_communities_wt, float(args.int))
     print(
         "Communities clustering | Number of rules after interestingness filter = "
-        + str(pd.concat(regles_communities_wt).shape[0])
+        + str(pd.concat(rules_communities_wt).shape[0])
     )
 
-    for i in range(len(regles_wt)):
-        regles_wt[i]["cluster"] = "wt" + "_community" + str(i + 1)
+    for i in range(len(rules_wt)):
+        rules_wt[i]["cluster"] = "wt" + "_community" + str(i + 1)
 
-    all_rules_wt = pd.concat(regles_wt)
+    all_rules_wt = pd.concat(rules_wt)
     # Number of rules
     print(f"Communities clustering | Number of rules = {str(all_rules_wt.shape[0])}")
 
@@ -401,51 +401,47 @@ def rules_communities(one_hot_label, communities_wt):
 
 @timeit
 def rules_clustering(one_hot_label, groupe, index, new_cluster, index_of_cluster):
-    regles_fp_clustering = fp_growth_with_clustering(
+    rules_fp_clustering = fp_growth_with_clustering(
         one_hot_label, groupe, index, 3, float(args.conf)
     )
 
     print(
-        f"Clustering | Number of rules before filtering = {str(pd.concat(regles_fp_clustering).shape[0])}"
+        f"Clustering | Number of rules before filtering = {str(pd.concat(rules_fp_clustering).shape[0])}"
     )
 
     ### POST_PROCESSING ###
 
-    regles_fp_clustering = interestingness_measure_clustering(
-        regles_fp_clustering, one_hot_label, groupe, index
+    rules_fp_clustering = interestingness_measure_clustering(
+        rules_fp_clustering, one_hot_label, groupe, index
     )
-    regles_fp_clustering = delete_redundant_clustering(regles_fp_clustering)
+    rules_fp_clustering = delete_redundant_clustering(rules_fp_clustering)
     print(
         "Clustering | Number of rules after redundancy filter = "
-        + str(pd.concat(regles_fp_clustering).shape[0])
+        + str(pd.concat(rules_fp_clustering).shape[0])
     )
-    regles_clustering = create_rules_df_clustering(
-        regles_fp_clustering, float(args.int)
-    )
+    rules_clustering = create_rules_df_clustering(rules_fp_clustering, float(args.int))
     print(
         "Clustering | Number of rules after interestingness filter = "
-        + str(pd.concat(regles_fp_clustering).shape[0])
+        + str(pd.concat(rules_fp_clustering).shape[0])
     )
 
-    ### ASSOCIER CHAQUE REGLE AU CLUSTER ###
+    # Associate each rule to the cluster it belongs to
 
-    regles_clustering_final = pd.DataFrame()
-    for i in range(len(regles_clustering)):
-        regles_clustering[i]["cluster"] = f"clust{str(i + 1)}"
-        regles_clustering_final = regles_clustering_final.append(regles_clustering[i])
+    rules_clustering_final = pd.DataFrame()
+    for i in range(len(rules_clustering)):
+        rules_clustering[i]["cluster"] = f"clust{str(i + 1)}"
+        rules_clustering_final = rules_clustering_final.append(rules_clustering[i])
 
     # Number of rules
-    print(f"Clustering | Number of rules = {str(regles_clustering_final.shape[0])}")
+    print(f"Clustering | Number of rules = {str(rules_clustering_final.shape[0])}")
 
-    # regles_clustering_final.head()
-    return regles_clustering_final
+    return rules_clustering_final
 
 
 @timeit
-def rules_new_cluter(one_hot_label, new_cluster, index_of_cluster):
-    ### SI ON A REPETE LE CLUSTERING POUR DIMINUER LE NOMBRE D'ARTICLES DANS CERTAINES CLASSES ALORS ON APPLIQUE SUR CES NOUVELLES CLASSE ###
-
-    regles_fp_clustering_reclust = []
+def rules_new_cluster(one_hot_label, new_cluster, index_of_cluster):
+    # If we repeated the clustering to decrease the number of articles in some classes then we apply on these new classes
+    rules_fp_clustering_reclustered = []
     for i in range(len(new_cluster)):
         if len(new_cluster[i][0]) != 0:
             rules = fp_growth_with_clustering(
@@ -470,30 +466,31 @@ def rules_new_cluter(one_hot_label, new_cluster, index_of_cluster):
         else:
             rules = pd.DataFrame([])
 
-        regles_fp_clustering_reclust.append(rules)
+        rules_fp_clustering_reclustered.append(rules)
 
     ### POST PROCESSING ###
-    regles_reclustering = []
-    for i in range(len(regles_fp_clustering_reclust)):
-        regles_reclustering.append(
-            create_rules_df_clustering(regles_fp_clustering_reclust[i], float(args.int))
+    rules_reclustering = []
+    for i in range(len(rules_fp_clustering_reclustered)):
+        rules_reclustering.append(
+            create_rules_df_clustering(
+                rules_fp_clustering_reclustered[i], float(args.int)
+            )
         )
         print(f"Clustering | Post-processing step {str(i)}")
 
-    ### ASSOCIER REGLES AU CLUSTER -> Attention ici on a deux cluster : ###
-    ### celui trouvé en premier puis celui trouvé en réappliquant la clusterisation ###
-    ### (e.g : clust1_clust1 + clust1_clust2 + clust1_clust3) ###
+    # Associate each rule to the cluster it belongs to. Caution: we have two clusters: the first one and the one we got after reclustering
+    # (e.g : clust1_clust1 + clust1_clust2 + clust1_clust3)
 
-    regles_reclustering_final = []
-    for i in range(len(regles_reclustering)):
-        if len(regles_reclustering[i]) != 0:
-            for j in range(len(regles_reclustering[i])):
-                regles_reclustering[i][j][
+    rules_reclustering_final = []
+    for i in range(len(rules_reclustering)):
+        if len(rules_reclustering[i]) != 0:
+            for j in range(len(rules_reclustering[i])):
+                rules_reclustering[i][j][
                     "cluster"
                 ] = f"_clust{str(index_of_cluster[i] + 1)}_clust{str(j + 1)}"
-                regles_reclustering_final.append(regles_reclustering[i][j])
+                rules_reclustering_final.append(rules_reclustering[i][j])
 
-    return pd.concat(regles_reclustering_final)
+    return pd.concat(rules_reclustering_final)
 
 
 def list_to_string(df):
@@ -507,10 +504,10 @@ def string_to_list(df):
     df["consequents"] = [x.split(",") for x in df["consequents"]]
 
 
-def combine_cluster_rules(regles_clustering_final, regles_reclustering_final):
-    ### REGROUPEMENT DE TOUTES LES REGLES DES CLUSTERS  + SUPPRESSION SI MEME REGLE DANS PLUSIEURS CLUSTERS###
+def combine_cluster_rules(rules_clustering_final, rules_reclustering_final):
+    # Gather all rules from all clusters and remove duplicates across clusters
 
-    rules_clustering = regles_clustering_final.append(regles_reclustering_final)
+    rules_clustering = rules_clustering_final.append(rules_reclustering_final)
     rules_clustering.reset_index(inplace=True, drop=True)
     print(f"Clustering | Total number of rules = {str(rules_clustering.shape[0])}")
 
@@ -535,7 +532,7 @@ def combine_cluster_rules(regles_clustering_final, regles_reclustering_final):
     return rules_clustering
 
 
-# Application à Community detection + Clustering (on regroupe article et label)
+# Application of Community detection + Clustering (we group article and label)
 def rules_community_cluster(one_hot, communities_wt):
     all_rules_clustering_wt = rules_clustering_communities_reduction(
         one_hot, communities_wt, 20, "cosine", 3, float(args.conf), float(args.int)
@@ -636,7 +633,7 @@ if __name__ == "__main__":
 
     print(f"Input size = {str(df_total.shape[0])} lines")
 
-    ### DATA PREPARATION : keep articles with at least one label associated, sort articles by alphabetic order, put labels all in lower case, etc. ###
+    # DATA PREPARATION : keep articles with at least one label associated, sort articles by alphabetic order, put labels all in lower case, etc.
 
     matrix_path = Path(f"data/matrix_one_hot{path_suffix}.csv")
 
@@ -665,18 +662,18 @@ if __name__ == "__main__":
             matrix_one_hot, args.n_components, args.method
         )
 
-    rules_no_clustering = []
+    rules_no_clustering = pd.DataFrame()
     if args.nocluster:
         rules_no_clustering = extract_rules_no_clustering(matrix_one_hot)
         export_rules(rules_no_clustering, "no_cluster")
 
-    rules_communities = []
+    rules_communities = pd.DataFrame()
     if args.community:
         communities_wt = walk_trap(matrix_one_hot)
         rules_communities = rules_communities(matrix_one_hot, communities_wt)
         export_rules(rules_communities, "community")
 
-    rules_clustering_total = []
+    rules_clustering_total = pd.DataFrame()
     if args.hac:
         ## generate clusters from labels
         groupe, new_cluster, index, index_of_cluster = clustering_CAH(encoded_data)
@@ -686,7 +683,7 @@ if __name__ == "__main__":
         )
 
         ## find sub-clusters, if any, and generate rules from them
-        rules_reclustering = rules_new_cluter(
+        rules_reclustering = rules_new_cluster(
             matrix_one_hot, new_cluster, index_of_cluster
         )
 
@@ -718,9 +715,9 @@ if __name__ == "__main__":
     )
     export_rules(all_rules, "all_rules")
 
-    filename = f"data/config_{str(args.endpoint)}.json"
+    filename = Path(f"data/config_{str(args.endpoint)}.json")
     # verify if config file exists before
-    if exists(filename):
+    if filename.exists():
         config = pd.read_json(filename)
     else:
         config = {
