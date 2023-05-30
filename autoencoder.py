@@ -5,20 +5,23 @@ from sklearn.base import TransformerMixin
 import tensorflow as tf
 
 
-def softplus(x):
-    return tf.math.log(tf.math.exp(x) + 1)
-
-
-def mish(x):
-    return x * tf.math.tanh(softplus(x))
-
-
 class AutoEncoderDimensionReduction(TransformerMixin):
     def __init__(self, encoding_dim, epochs, batch_size, lr=1e-3):
         self.encoding_dim = encoding_dim
         self.epochs = epochs
         self.batch_size = batch_size
         self.lr = lr
+
+        tf.keras.callbacks.EarlyStopping(
+            monitor="loss",
+            min_delta=0,
+            patience=10,
+            verbose=0,
+            mode="auto",
+            baseline=None,
+            restore_best_weights=False,
+            start_from_epoch=0,
+        )
 
     def fit(self, X, y=None):
         input_dim = X.shape[1]
