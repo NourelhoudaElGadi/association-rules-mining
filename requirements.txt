@@ -2,10 +2,11 @@ flask==2.2.2
 cdlib==0.2.6
 numpy
 gensim==4.1.2
-keras==2.11
+keras==2.12.0
+tensorflow==2.12.0
 mlxtend==0.19.0
 networkx==2.5
-pandas
+pandas<2.0
 scikit_learn==1.0.2
 scipy
 seaborn==0.11.1
