@@ -1,12 +1,9 @@
 from functools import wraps
+import logging
 import time
 import pandas as pd
 
 import numpy as np
-
-import SPARQLWrapper
-import json
-from SPARQLWrapper import SPARQLWrapper, JSON
 
 
 from scipy.cluster.hierarchy import linkage, fcluster
@@ -14,10 +11,13 @@ import scipy.linalg.blas
 
 from mlxtend.frequent_patterns import association_rules
 from mlxtend.frequent_patterns import fpgrowth
+from tqdm import tqdm
 
 import umap
 
 from autoencoder import AutoEncoderDimensionReduction
+
+logger = logging.getLogger(__name__)
 
 
 def timeit(func):
@@ -27,33 +27,11 @@ def timeit(func):
         result = func(*args, **kwargs)
         end_time = time.perf_counter()
         total_time = end_time - start_time
-        print(f"Function {func.__name__}{args} {kwargs} Took {total_time:.4f} seconds")
+        # print(f"Function {func.__name__}{args} {kwargs} Took {total_time:.4f} seconds")
+        print(f"Function {func.__name__} Took {total_time:.4f} seconds")
         return result
 
     return timeit_wrapper
-
-
-@timeit
-def sparql_service_to_dataframe(service, query):
-    """
-    Helper function to convert SPARQL results into a Pandas DataFrame.
-
-    Credit to Ted Lawless https://lawlesst.github.io/notebook/sparql-dataframe.html
-    """
-    sparql = SPARQLWrapper(service)
-    sparql.setQuery(query)
-    sparql.setReturnFormat(JSON)
-    result = sparql.query()
-
-    processed_results = json.load(result.response)
-    cols = processed_results["head"]["vars"]
-
-    out = []
-    for row in processed_results["results"]["bindings"]:
-        item = [row.get(c, {}).get("value") for c in cols]
-        out.append(item)
-
-    return pd.DataFrame(out, columns=cols)
 
 
 def delete_Label_number(label):
@@ -448,22 +426,22 @@ def delete_redundant(rules):
     """
 
     redundant = []
-    for i in rules.itertuples():
+    for i in tqdm(rules.itertuples()):
         redundant.extend(
             j.Index
             for j in rules.itertuples()
             if (
                 (
-                    (i.antecedents.issubset(j.antecedents))
-                    and (i.consequents == j.consequents)
-                    and (i.confidence >= j.confidence)
-                    and (i.Index != j.Index)
+                    i.consequents == j.consequents
+                    and i.confidence >= j.confidence
+                    and i.Index != j.Index
+                    and i.antecedents.issubset(j.antecedents)
                 )
                 or (
-                    (i.consequents.issubset(j.consequents))
-                    and (i.antecedents == j.antecedents)
-                    and (i.confidence >= j.confidence)
-                    and (i.Index != j.Index)
+                    i.antecedents == j.antecedents
+                    and i.confidence >= j.confidence
+                    and i.Index != j.Index
+                    and i.consequents.issubset(j.consequents)
                 )
             )
         )
@@ -473,26 +451,13 @@ def delete_redundant(rules):
 
 
 @timeit
-def delete_redundant_clustering(rules_clustering):
+def delete_redundant_clustering_or_communities(rules_clustering):
     """
     Apply delete_redundant to each cluster
     """
 
     rules_without_redundant = []
-    for rules in rules_clustering:
-        rules = delete_redundant(rules)
-        rules_without_redundant.append(rules)
-    return rules_without_redundant
-
-
-@timeit
-def delete_redundant_community(rules_clustering):
-    """
-    Apply delete_redundant to each cluster
-    """
-
-    rules_without_redundant = []
-    for rules in rules_clustering:
+    for rules in tqdm(rules_clustering, desc="Deleting redundant rules"):
         rules = delete_redundant(rules)
         rules_without_redundant.append(rules)
     return rules_without_redundant
@@ -748,6 +713,7 @@ def rules_clustering_communities_reduction(
 
         input_dim = one_hot.shape[1]
         # Number of neurons in each Layer [8, 6, 4, 3, ...] of encoders
+        logger.info(f"Reducing dimensions to: {str(encoding_dim)} with {method}")
         encoded_data = dimensionality_reduction(one_hot, encoding_dim, method=method)
 
         nb_cluster_communities, groupe_communities, index_communities = elbow_method(
@@ -776,7 +742,7 @@ def rules_clustering_communities_reduction(
             groupe_communities,
             index_communities,
         )
-        rules_fp_clustering_communities = delete_redundant_clustering(
+        rules_fp_clustering_communities = delete_redundant_clustering_or_communities(
             rules_fp_clustering_communities
         )
         rules_clustering_communities = create_rules_df_clustering(
@@ -855,6 +821,7 @@ def rules_clustering_communities_embedding_autoencoder(
         ]
         one_hot_cluster = one_hot.drop(label_drop, axis=1)
         encoding_dim = 32
+        logger.info(f"Reducing dimensions to: {encoding_dim} with {method}")
         encoded_data = dimensionality_reduction(
             one_hot_cluster, encoding_dim, method=method
         )
@@ -885,7 +852,7 @@ def rules_clustering_communities_embedding_autoencoder(
             groupe_communities,
             index_communities,
         )
-        rules_fp_clustering_communities = delete_redundant_clustering(
+        rules_fp_clustering_communities = delete_redundant_clustering_or_communities(
             rules_fp_clustering_communities
         )
         rules_clustering_communities = create_rules_df_clustering(
