@@ -13,7 +13,7 @@ datasets = {
                     ?s oa:hasTarget ?article ; oa:hasBody ?uri . 
                 } limit 10000 offset %s
             """,
-        "wikidata": ""
+        "wikidata": "",
     },
     "covid": {
         "type": "rdf",
@@ -38,13 +38,15 @@ datasets = {
                 ?article dct:issued ?date; dct:abstract [ rdf:value ?abs ].     
             } 
             LIMIT 10000 OFFSET  %s
-        """
+        """,
     },
     "crobora": {
         "type": "api",
         "url": "http://dataviz.i3s.unice.fr/crobora-api",
-        "labels": ["http://dataviz.i3s.unice.fr/crobora-api/cluster/names", "http://dataviz.i3s.unice.fr/crobora-api/cluster/names2"],
-        "images": "http://dataviz.i3s.unice.fr/crobora-api/search/imagesOR?%s&options=illustration&options=location&options=celebrity&options=event" 
-
-    }
+        "labels": [
+            "http://dataviz.i3s.unice.fr/crobora-api/cluster/names",
+            "http://dataviz.i3s.unice.fr/crobora-api/cluster/names2",
+        ],
+        "images": "http://dataviz.i3s.unice.fr/crobora-api/search/imagesOR?%s&options=illustration&options=location&options=celebrity&options=event",
+    },
 }
