@@ -378,7 +378,9 @@ def rules_communities(one_hot_label, communities_wt):
     rules_communities_wt = interestingness_measure_community(
         rules_communities_wt, one_hot_label, communities_wt
     )
-    rules_communities_wt = delete_redundant_community(rules_communities_wt)
+    rules_communities_wt = delete_redundant_clustering_or_communities(
+        rules_communities_wt
+    )
     print(
         "Communities clustering | Number of rules after redundancy filter = "
         + str(pd.concat(rules_communities_wt).shape[0])
@@ -414,7 +416,9 @@ def rules_clustering(one_hot_label, groupe, index, new_cluster, index_of_cluster
     rules_fp_clustering = interestingness_measure_clustering(
         rules_fp_clustering, one_hot_label, groupe, index
     )
-    rules_fp_clustering = delete_redundant_clustering(rules_fp_clustering)
+    rules_fp_clustering = delete_redundant_clustering_or_communities(
+        rules_fp_clustering
+    )
     print(
         "Clustering | Number of rules after redundancy filter = "
         + str(pd.concat(rules_fp_clustering).shape[0])
@@ -441,7 +445,7 @@ def rules_clustering(one_hot_label, groupe, index, new_cluster, index_of_cluster
 @timeit
 def rules_new_cluster(one_hot_label, new_cluster, index_of_cluster):
     # If we repeated the clustering to decrease the number of articles in some classes then we apply on these new classes
-    rules_fp_clustering_reclustered = []
+    rules_fp_clustering_reclustered = pd.DataFrame()
     for i in range(len(new_cluster)):
         if len(new_cluster[i][0]) != 0:
             rules = fp_growth_with_clustering(
@@ -456,7 +460,7 @@ def rules_new_cluster(one_hot_label, new_cluster, index_of_cluster):
             rules = interestingness_measure_clustering(
                 rules, one_hot_label, new_cluster[i][1], new_cluster[i][2]
             )
-            rules = delete_redundant_clustering(rules)
+            rules = delete_redundant_clustering_or_communities(rules)
             print(
                 "Clustering "
                 + str(i)
@@ -469,7 +473,7 @@ def rules_new_cluster(one_hot_label, new_cluster, index_of_cluster):
         rules_fp_clustering_reclustered.append(rules)
 
     ### POST PROCESSING ###
-    rules_reclustering = []
+    rules_reclustering = pd.DataFrame()
     for i in range(len(rules_fp_clustering_reclustered)):
         rules_reclustering.append(
             create_rules_df_clustering(
@@ -481,7 +485,7 @@ def rules_new_cluster(one_hot_label, new_cluster, index_of_cluster):
     # Associate each rule to the cluster it belongs to. Caution: we have two clusters: the first one and the one we got after reclustering
     # (e.g : clust1_clust1 + clust1_clust2 + clust1_clust3)
 
-    rules_reclustering_final = []
+    rules_reclustering_final = pd.DataFrame()
     for i in range(len(rules_reclustering)):
         if len(rules_reclustering[i]) != 0:
             for j in range(len(rules_reclustering[i])):
@@ -490,7 +494,7 @@ def rules_new_cluster(one_hot_label, new_cluster, index_of_cluster):
                 ] = f"_clust{str(index_of_cluster[i] + 1)}_clust{str(j + 1)}"
                 rules_reclustering_final.append(rules_reclustering[i][j])
 
-    return pd.concat(rules_reclustering_final)
+    return rules_reclustering_final
 
 
 def list_to_string(df):
@@ -578,10 +582,10 @@ def export_rules(rules_df, cluster):
     rules_df["source"] = rules_df["antecedents"]
     rules_df["target"] = rules_df["consequents"]
 
-    filename = filename(cluster)
-    print("Filename: " + filename)
+    cluster_filename = filename(cluster)
+    print("Filename: " + cluster_filename)
 
-    rules_df.to_json(path_or_buf=filename, orient="records")
+    rules_df.to_json(path_or_buf=cluster_filename, orient="records")
 
 
 if __name__ == "__main__":
@@ -718,7 +722,7 @@ if __name__ == "__main__":
     filename = Path(f"data/config_{str(args.endpoint)}.json")
     # verify if config file exists before
     if filename.exists():
-        config = pd.read_json(filename)
+        config = json.load(filename)
     else:
         config = {
             "lang": [],
@@ -735,8 +739,8 @@ if __name__ == "__main__":
                 },
             ],
         }
-
-    config["graph"].append(args.graph)
+    if args.graph is not None:
+        config["graph"].append(args.graph)
 
     with open(filename, "w") as outfile:
         json.dump(config, outfile, indent=4, sort_keys=False)
