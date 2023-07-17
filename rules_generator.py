@@ -2,6 +2,8 @@ from base64 import encode
 from pathlib import Path
 import warnings
 
+from assocrulext.io.querying import sparql_service_to_dataframe
+
 warnings.filterwarnings("ignore")
 
 
@@ -367,7 +369,7 @@ def extract_rules_no_clustering(one_hot_matrix):
 
 
 @timeit
-def rules_communities(one_hot_label, communities_wt):
+def extract_rules_from_communities(one_hot_label, communities_wt):
     rules_communities_wt = fp_growth_with_community(
         one_hot_label, communities_wt, 3, float(args.conf)
     )
@@ -674,7 +676,9 @@ if __name__ == "__main__":
     rules_communities = pd.DataFrame()
     if args.community:
         communities_wt = walk_trap(matrix_one_hot)
-        rules_communities = rules_communities(matrix_one_hot, communities_wt)
+        rules_communities = extract_rules_from_communities(
+            matrix_one_hot, communities_wt
+        )
         export_rules(rules_communities, "community")
 
     rules_clustering_total = pd.DataFrame()
@@ -722,7 +726,8 @@ if __name__ == "__main__":
     filename = Path(f"data/config_{str(args.endpoint)}.json")
     # verify if config file exists before
     if filename.exists():
-        config = json.load(filename)
+        with open(filename, "r") as f:
+            config = json.load(f)
     else:
         config = {
             "lang": [],
