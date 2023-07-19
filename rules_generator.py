@@ -6,16 +6,20 @@ from assocrulext.io.querying import sparql_service_to_dataframe
 
 warnings.filterwarnings("ignore")
 
-
+import torch
 import pandas as pd
 
 import pandas as pd
 
-
+import pykeen
+import rdflib
 import numpy as np
 
 import json
-
+import numpy as np
+from sklearn.preprocessing import MinMaxScaler
+from tqdm import tqdm
+import re
 
 import networkx as nx
 from cdlib import algorithms
@@ -67,6 +71,8 @@ parser.add_argument(
     default=0.3,
     required=False,
 )
+parser.add_argument('--model_path', type=str, required=True, help='Chemin vers le modèle d\'embedding de graphe')
+
 parser.add_argument(
     "--occurrence",
     help="Keep only terms co-occurring more than x times. Default is 5",
@@ -76,7 +82,7 @@ parser.add_argument(
 
 parser.add_argument(
     "--nocluster",
-    action=argparse.BooleanOptionalAction,
+    #action=argparse.BooleanOptionalAction,
     help="Compute rules without any kind of clustering. Default is False.",
     default=False,
     required=False,
@@ -84,21 +90,21 @@ parser.add_argument(
 parser.add_argument(
     "--community",
     help="Compute rules using a Community Detection method to cluster transactions. Default is False.",
-    action=argparse.BooleanOptionalAction,
+    #action=argparse.BooleanOptionalAction,
     default=False,
     required=False,
 )
 parser.add_argument(
     "--hac",
     help="Compute rules using a hierarchial agglomerative (i.e., bottom-up) clustering (HAC) of transactions. Default is False.",
-    action=argparse.BooleanOptionalAction,
+    #action=argparse.BooleanOptionalAction,
     default=False,
     required=False,
 )
 parser.add_argument(
     "--clustercombo",
     help="Compute rules by combining both clustering methods (i.e. HAC and Community Detection). Default is False.",
-    action=argparse.BooleanOptionalAction,
+    #action=argparse.BooleanOptionalAction,
     default=False,
     required=False,
 )
@@ -149,11 +155,12 @@ def query():
     ## Get all data by set the offset at each round ##
     while df_query.shape[0] > 0:
         print("offset = ", offset)
-        offset += 10000
+        offset += 70000
         complete_query = query % (offset)
         df_query = sparql_service_to_dataframe(
             datasets[args.endpoint]["url"], complete_query
         )
+        
         list_total.append(df_query)
 
     ## Concatenate all the dataframes from the list ##
@@ -175,6 +182,55 @@ def query():
 
     return df_total
 
+
+def normalize_scores(scores):
+    scaler = MinMaxScaler()
+    normalized_scores = scaler.fit_transform(np.array(scores).reshape(-1, 1))
+    normalized_scores = normalized_scores.flatten()
+    return normalized_scores
+
+
+def score_rules(rules, entity_embeddings, relation_embeddings, model, prefix="all"):
+    rule_scores = []
+
+    for rule in tqdm(rules, desc=f"Scoring {prefix} rules for noverly"):
+        antecedents = [int(a) if a.isdigit() else re.search(r'\d+', a).group() for a in rule["antecedents"]]
+        consequents = [int(c) if c.isdigit() else re.search(r'\d+', c).group() for c in rule["consequents"]]
+
+
+        scores = []
+
+        for antecedent in antecedents:
+            if antecedent in entity_embeddings.index:
+                for consequent in consequents:
+                    if consequent in entity_embeddings.index:
+                        pair_scores = []
+                        for relation in relation_embeddings.index:
+                            hrt_batch = torch.tensor([[antecedent, relation, consequent]])
+                            triple_scores = model.score_hrt(hrt_batch)
+                            pair_scores.append(torch.max(triple_scores).item())
+                            #print("pair",pair_scores)
+                        max_score = max(pair_scores) if pair_scores else 0.0
+                        #print("max",max_score)
+                        scores.append(float(max_score))
+                        #print("score",scores)
+
+        rule_score = np.mean(scores) if scores else 0.0  # Score de nouveauté de la règle
+        rule_scores.append(rule_score)
+        #print("rule_scores",rule_scores)
+
+    normalized_scores = normalize_scores(rule_scores)
+    mean_score = np.mean(normalized_scores)  # Score moyen de nouveauté pour l'ensemble des règles
+    #print("mean_score",mean_score)
+    # Classer les règles en fonction du score de nouveauté
+    unknown_rules = [rule for rule, score in zip(rules, normalized_scores) if score > mean_score]#nouvelles connaissance
+    partial_known_rules = [rule for rule, score in zip(rules, normalized_scores) if score <= mean_score and score > 0]
+    known_rules = [rule for rule, score in zip(rules, normalized_scores) if score == 0]
+    unknown_scores = [score for score in normalized_scores if score > mean_score]
+    partial_known_scores = [score for score in normalized_scores if 0 < score <= mean_score]
+    known_scores = [score for score in normalized_scores if score == 0]
+
+    return rule_scores, unknown_rules, partial_known_rules, known_rules,unknown_scores, partial_known_scores, known_scores
 
 def fetch_data(url):
     try:
@@ -700,11 +756,13 @@ if __name__ == "__main__":
             rules_clustering, rules_reclustering
         )
         export_rules(rules_clustering_total, "clustering_final")
+        
+
+
 
     # all_rules_clustering_wt = rulesCommunityCluster(matrix_one_hot, communities_wt)
 
     # exportRules(all_rules_clustering_wt, 'communities_clustering')
-
     all_rules = rules_no_clustering.append(rules_clustering_total).append(
         rules_communities
     )  # .append(all_rules_clustering_wt)
@@ -722,7 +780,32 @@ if __name__ == "__main__":
         all_rules.shape[0],
     )
     export_rules(all_rules, "all_rules")
+    all_rules_with_scores= pd.DataFrame()
+    if args.model_path:
+            my_pykeen_model = torch.load(args.model_path, map_location=torch.device('cpu'))
+            entity_embeddings = my_pykeen_model.entity_representations[0]._embeddings.weight
+            relation_embeddings = my_pykeen_model.relation_representations[0]._embeddings.weight
+            entity_embeddings_cpu=entity_embeddings.cpu()
+            relation_embeddings_cpu=relation_embeddings.cpu()
+            # Convertir les embeddings des entités en DataFrame
+            entity_embeddings_df = pd.DataFrame(entity_embeddings_cpu.detach().numpy())
+            relation_embeddings_df = pd.DataFrame(relation_embeddings_cpu.detach().numpy())
+            with open("data/rules_issa_agrovoc_all_rules.json", 'r') as file:
+                rules = json.load(file)
 
+            # Appeler la fonction score_rules pour obtenir les scores et classer les règles
+            rule_scores, unknown_rules, partial_known_rules, known_rules,unknown_scores, partial_known_scores, known_scores = score_rules(rules, entity_embeddings_df, relation_embeddings_df, my_pykeen_model)
+
+            # Convertir les règles classifiées en DataFrames
+            unknown_df = pd.DataFrame(unknown_rules)
+            unknown_df.to_json(f'unknown_rules.json', orient="records")
+            # Convertir les scores en DataFrames
+            unknown_scores_df = pd.DataFrame(unknown_scores).rename(columns={0: "score"})
+            # Enregistrer les scores en tant que fichiers JSON
+            unknown_scores_df.to_json(f'unknown_scores.json', orient="records")
+            unknown_df_with_scores= pd.DataFrame()
+            all_rules_with_scores = pd.concat([unknown_df, unknown_scores_df], axis=1)
+            export_rules(all_rules_with_scores, "all_rules_with_scores")
     filename = Path(f"data/config_{str(args.endpoint)}.json")
     # verify if config file exists before
     if filename.exists():
