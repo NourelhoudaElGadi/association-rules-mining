@@ -795,7 +795,6 @@ if __name__ == "__main__":
 
             # Appeler la fonction score_rules pour obtenir les scores et classer les règles
             rule_scores, unknown_rules, partial_known_rules, known_rules,unknown_scores, partial_known_scores, known_scores = score_rules(rules, entity_embeddings_df, relation_embeddings_df, my_pykeen_model)
-
             # Convertir les règles classifiées en DataFrames
             unknown_df = pd.DataFrame(unknown_rules)
             unknown_df.to_json(f'unknown_rules.json', orient="records")
