@@ -82,7 +82,7 @@ parser.add_argument(
 
 parser.add_argument(
     "--nocluster",
-    #action=argparse.BooleanOptionalAction,
+    action=argparse.BooleanOptionalAction,
     help="Compute rules without any kind of clustering. Default is False.",
     default=False,
     required=False,
@@ -90,21 +90,21 @@ parser.add_argument(
 parser.add_argument(
     "--community",
     help="Compute rules using a Community Detection method to cluster transactions. Default is False.",
-    #action=argparse.BooleanOptionalAction,
+    action=argparse.BooleanOptionalAction,
     default=False,
     required=False,
 )
 parser.add_argument(
     "--hac",
     help="Compute rules using a hierarchial agglomerative (i.e., bottom-up) clustering (HAC) of transactions. Default is False.",
-    #action=argparse.BooleanOptionalAction,
+    action=argparse.BooleanOptionalAction,
     default=False,
     required=False,
 )
 parser.add_argument(
     "--clustercombo",
     help="Compute rules by combining both clustering methods (i.e. HAC and Community Detection). Default is False.",
-    #action=argparse.BooleanOptionalAction,
+    action=argparse.BooleanOptionalAction,
     default=False,
     required=False,
 )
@@ -155,7 +155,7 @@ def query():
     ## Get all data by set the offset at each round ##
     while df_query.shape[0] > 0:
         print("offset = ", offset)
-        offset += 70000
+        offset += 10000
         complete_query = query % (offset)
         df_query = sparql_service_to_dataframe(
             datasets[args.endpoint]["url"], complete_query
