@@ -1,12 +1,10 @@
 import json
 from pathlib import Path
-
 from urllib.request import urlopen
 
 import pandas as pd
 import urllib3
-
-from utils import timeit
+from assocrulext.utils.timing import timeit
 
 
 def fetch_data(url):
@@ -131,4 +129,3 @@ def compute_cooccurrence_matrix(df_article_sort):
         pd.DataFrame(one_hot_label.columns)[0].apply(lambda x: x.split("_")[-1])
     )
 
-    return one_hot_label

@@ -1,7 +1,7 @@
 from scipy.sparse import csr_matrix
 from sklearn.decomposition import PCA, FastICA
 from sklearn.manifold import TSNE, Isomap, MDS, LocallyLinearEmbedding
-
+import pandas as pd
 from assocrulext.ml.autoencoder import AutoEncoderDimensionReduction
 import umap
 

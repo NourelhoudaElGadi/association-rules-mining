@@ -1,6 +1,6 @@
 import pandas as pd
 from assocrulext.utils.timing import timeit
-from utils import find_symmetric
+from assocrulext.rules.fitering import find_symmetric
 
 
 def delete_Label_number(label):

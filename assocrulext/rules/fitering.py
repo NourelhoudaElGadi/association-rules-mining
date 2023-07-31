@@ -1,4 +1,4 @@
-import timeit
+from assocrulext.utils.timing import timeit
 
 from tqdm import tqdm
 

@@ -14,7 +14,7 @@ from assocrulext.io.data import fetch_crobora_data
 from assocrulext.io.querying import sparql_service_to_dataframe
 from assocrulext.ml.dimred import dimensionality_reduction
 from assocrulext.rules.fitering import delete_redundant, delete_redundant_group
-from assocrulext.rules.fpgrowth import fp_growth, fp_growth_per_community
+from assocrulext.rules.fpgrowth_algo import fp_growth_association_rules, fp_growth_per_cluster, fp_growth_per_community
 from assocrulext.utils.data import (
     create_rules_df,
     create_rules_df_group,
@@ -147,6 +147,13 @@ parser.add_argument("--n_clusters", type=int, default=10, required=False)
 
 parser.add_argument("--append", default=False, required=False)
 
+parser.add_argument(
+    "--combined",
+    help="Compute rules using both HAC and Community Detection clustering methods. Default is False.",
+    action=argparse.BooleanOptionalAction,
+    default=False,
+    required=False,
+)
 
 args = parser.parse_args()
 
@@ -270,7 +277,7 @@ def compute_cooccurrence_matrix(df_article_sort):
 
 @timeit
 def extract_rules_no_clustering(one_hot_matrix):
-    rules_fp = fp_growth(one_hot_matrix, 3, float(args.conf))
+    rules_fp =fp_growth_association_rules(one_hot_matrix, 3, float(args.conf))
 
     print(
         f"No clustering | Number of rules before filtering = {str(rules_fp.shape[0])}"
@@ -331,7 +338,7 @@ def extract_rules_from_communities(one_hot_label, communities_wt):
 
 @timeit
 def rules_clustering(one_hot_label, groupe, index, new_cluster, index_of_cluster):
-    rules_fp_clustering = fp_growth_per_group(
+    rules_fp_clustering = fp_growth_per_cluster(
         one_hot_label, groupe, index, 3, float(args.conf)
     )
 
@@ -345,28 +352,28 @@ def rules_clustering(one_hot_label, groupe, index, new_cluster, index_of_cluster
         rules_fp_clustering, one_hot_label, groupe, index
     )
     rules_fp_clustering = delete_redundant_group(rules_fp_clustering)
+
+    # Concatenate DataFrames in the list
+    rules_clustering = pd.concat(rules_fp_clustering)
+
     print(
         "Clustering | Number of rules after redundancy filter = "
-        + str(pd.concat(rules_fp_clustering).shape[0])
+        + str(rules_clustering.shape[0])
     )
-    rules_clustering = create_rules_df(rules_fp_clustering, float(args.int))
+    rules_clustering_final = create_rules_df(rules_clustering, float(args.int))
     print(
         "Clustering | Number of rules after interestingness filter = "
-        + str(pd.concat(rules_fp_clustering).shape[0])
+        + str(rules_clustering_final.shape[0])
     )
 
     # Associate each rule to the cluster it belongs to
 
-    rules_clustering_final = pd.DataFrame()
-    for i in range(len(rules_clustering)):
-        rules_clustering[i]["cluster"] = f"clust{str(i + 1)}"
-        rules_clustering_final = rules_clustering_final.append(rules_clustering[i])
+    rules_clustering_final["cluster"] = [f"clust{str(i + 1)}" for i in range(len(rules_clustering_final))]
 
     # Number of rules
     print(f"Clustering | Number of rules = {str(rules_clustering_final.shape[0])}")
 
     return rules_clustering_final
-
 
 @timeit
 def rules_new_cluster(one_hot_label, new_cluster, index_of_cluster):
@@ -374,7 +381,7 @@ def rules_new_cluster(one_hot_label, new_cluster, index_of_cluster):
     rules_fp_clustering_reclustered = pd.DataFrame()
     for i in range(len(new_cluster)):
         if len(new_cluster[i][0]) != 0:
-            rules = fp_growth_per_group(
+            rules = fp_growth_per_cluster(
                 one_hot_label, new_cluster[i][1], new_cluster[i][2], 4, float(args.conf)
             )
             print(
@@ -483,6 +490,32 @@ def rules_community_cluster(one_hot, communities_wt, encoding_dim, method):
 
     return all_rules_clustering_wt
 
+def rules_HAC_communities(one_hot, communities_wt, matrix_one_hot, encoded_data):
+    # Effectuer le clustering HAC
+    groupe, new_cluster, index, index_of_cluster = clustering_CAH(
+        encoded_data, number_of_clusters=10, metric="cosine"
+    )
+    rules_clustering_hac = rules_clustering(
+        matrix_one_hot, groupe, index, new_cluster, index_of_cluster
+    )
+    rules_reclustering_hac = rules_new_cluster(
+        matrix_one_hot, new_cluster, index_of_cluster
+    )
+    rules_clustering_hac = combine_cluster_rules(
+        rules_clustering_hac, rules_reclustering_hac
+    )
+    
+    # Effectuer le clustering de détection de communautés
+    communities_clustering = extract_rules_from_communities(
+        one_hot, communities_wt
+    )
+
+    # Combiner les résultats des deux méthodes
+    combined_rules = rules_clustering_hac.append(communities_clustering)
+    combined_rules.reset_index(inplace=True, drop=True)
+
+
+    return combined_rules
 
 def filename(cluster):
     if args.filename:
@@ -496,16 +529,20 @@ def filename(cluster):
     return "data/rules" + dataset + graph + "_" + cluster + ".json"
 
 
-def export_rules(rules_df, cluster):
+def export_rules(rules_df, cluster,rule_scores=None):
     if args.graph:
         rules_df["graph"] = args.graph
 
     rules_df["source"] = rules_df["antecedents"]
     rules_df["target"] = rules_df["consequents"]
 
+
+    if rule_scores is not None:
+        rules_df["score"] = rule_scores
+        
     cluster_filename = filename(cluster)
     print("Filename: " + cluster_filename)
-
+    
     rules_df.to_json(path_or_buf=cluster_filename, orient="records")
 
 
@@ -586,6 +623,7 @@ if __name__ == "__main__":
         encoded_data = dimensionality_reduction(
             matrix_one_hot, args.n_components, args.method
         )
+        encoded_data.to_csv(encoded_path, index=False)
 
     rules_no_clustering = pd.DataFrame()
     if args.nocluster:
@@ -593,7 +631,7 @@ if __name__ == "__main__":
         export_rules(rules_no_clustering, "no_cluster")
 
     rules_communities = pd.DataFrame()
-    if args.community or (not args.community and not args.combined):
+    if args.community:
         communities_wt = walk_trap(matrix_one_hot)
         rules_communities = extract_rules_from_communities(
             matrix_one_hot, communities_wt
@@ -604,10 +642,10 @@ if __name__ == "__main__":
     if args.hac:
         ## generate clusters from labels
         groupe, new_cluster, index, index_of_cluster = clustering_CAH(
-            encoded_data, n_clusters=args.n_clusters, method="cosine"
+            encoded_data, number_of_clusters=10, metric="cosine"
         )
         ## generate rules from clusters
-        rules_clustering = rules_clustering(
+        rules_clustering_h = rules_clustering(
             matrix_one_hot, groupe, index, new_cluster, index_of_cluster
         )
 
@@ -618,23 +656,25 @@ if __name__ == "__main__":
 
         ## combine all rules generated from clustering and remove duplicates (possible rules find in several clusters), keeping only the most relevant
         rules_clustering_CAH = combine_cluster_rules(
-            rules_clustering, rules_reclustering
+            rules_clustering_h, rules_reclustering
         )
         export_rules(rules_clustering_CAH, "clustering_hac")
 
     rules_combined = pd.DataFrame()
-    if args.combined:
+    if args.clustercombo:
         rules_combined = rules_HAC_communities(
             matrix_one_hot,
             communities_wt,
+            matrix_one_hot,
+            encoded_data
         )
-
+        export_rules(rules_combined, "combining_clustering_community")
     # all_rules_clustering_wt = rulesCommunityCluster(matrix_one_hot, communities_wt)
 
     # exportRules(all_rules_clustering_wt, 'communities_clustering')
     all_rules = rules_no_clustering.append(rules_clustering_CAH).append(
         rules_communities
-    )  # .append(all_rules_clustering_wt)
+    ).append(rules_combined)
     all_rules.reset_index(inplace=True, drop=True)
 
     print("All rules | Number of rules = ", all_rules.shape[0])
@@ -653,9 +693,7 @@ if __name__ == "__main__":
     if args.model_path:
         my_pykeen_model = torch.load(args.model_path, map_location=torch.device("cpu"))
         entity_embeddings = my_pykeen_model.entity_representations[0]._embeddings.weight
-        relation_embeddings = my_pykeen_model.relation_representations[
-            0
-        ]._embeddings.weight
+        relation_embeddings = my_pykeen_model.relation_representations[0]._embeddings.weight
         entity_embeddings_cpu = entity_embeddings.cpu()
         relation_embeddings_cpu = relation_embeddings.cpu()
         # Convertir les embeddings des entités en DataFrame
@@ -664,7 +702,7 @@ if __name__ == "__main__":
         with open("data/rules_issa_agrovoc_all_rules.json", "r") as file:
             rules = json.load(file)
 
-        # Appeler la fonction score_rules pour obtenir les scores et classer les règles
+        # Appeler la fonction score_rules pour obtenir les scores et classer les règles en catègories
         (
             rule_scores,
             unknown_rules,
@@ -673,19 +711,13 @@ if __name__ == "__main__":
             unknown_scores,
             partial_known_scores,
             known_scores,
-        ) = score_rules(
+            ) = score_rules(
             rules, entity_embeddings_df, relation_embeddings_df, my_pykeen_model
         )
+        #export_rules(rules, "all_rules_with_scores",rule_scores=rule_scores)
         # Convertir les règles classifiées en DataFrames
         unknown_df = pd.DataFrame(unknown_rules)
-        unknown_df.to_json("unknown_rules.json", orient="records")
-        # Convertir les scores en DataFrames
-        unknown_scores_df = pd.DataFrame(unknown_scores).rename(columns={0: "score"})
-        # Enregistrer les scores en tant que fichiers JSON
-        unknown_scores_df.to_json("unknown_scores.json", orient="records")
-        unknown_df_with_scores = pd.DataFrame()
-        all_rules_with_scores = pd.concat([unknown_df, unknown_scores_df], axis=1)
-        export_rules(all_rules_with_scores, "all_rules_with_scores")
+        export_rules(unknown_df, "all_rules_with_scores",rule_scores=unknown_scores)
     filename = Path(f"data/config_{str(args.endpoint)}.json")
     # verify if config file exists before
     if filename.exists():

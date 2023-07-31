@@ -1,6 +1,5 @@
 import logging
-import timeit
-
+from assocrulext.utils.timing import timeit
 import pandas as pd
 
 import numpy as np
@@ -14,7 +13,13 @@ from tqdm import tqdm
 
 
 from assocrulext.ml.autoencoder import AutoEncoderDimensionReduction
-
+from assocrulext.clustering.hac import *
+from assocrulext.clustering.community import *
+from assocrulext.clustering.cooc import *
+from assocrulext.rules.fitering import delete_redundant_group
+from assocrulext.eval import *
+from assocrulext.utils.data import *
+from assocrulext.rules.fpgrowth_algo import fp_growth_per_cluster
 logger = logging.getLogger(__name__)
 
 
@@ -138,7 +143,7 @@ def rules_HAC_communities(
             pd.DataFrame(one_hot_cluster.columns)[0].apply(lambda x: x.split("_")[-1])
         )
 
-        rules_fp_clustering_communities = fp_growth_per_group(
+        rules_fp_clustering_communities = fp_growth_per_cluster(
             one_hot_cluster,
             groupe_communities,
             index_clusters,

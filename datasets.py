@@ -1,14 +1,14 @@
 datasets = {
     "issa": {
         "type": "rdf",
-        "url": "https://data-issa.cirad.fr/sparql",
+        "url": "http://localhost:8890/sparql",
         "agrovoc": """
                 prefix oa: <http://www.w3.org/ns/oa#>
                 prefix skosxl: <http://www.w3.org/2008/05/skos-xl#> 
                 SELECT distinct ?article (?uri as ?label) 
                 from <http://agrovoc.fao.org/graph> 
-                from <http://data-issa.cirad.fr/graph/thematic-descriptors> 
-                from <http://data-issa.cirad.fr/graph/annif-descriptors>
+                from <http://localhost:8890/graph/thematic-descriptors>
+                from <http://localhost:8890/graph/annif-descriptors> 
                 WHERE { 
                     ?s oa:hasTarget ?article ; oa:hasBody ?uri . 
                 } limit 10000 offset %s
