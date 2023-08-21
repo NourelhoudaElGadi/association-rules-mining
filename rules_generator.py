@@ -490,7 +490,7 @@ def rules_community_cluster(one_hot, communities_wt, encoding_dim, method):
 
     return all_rules_clustering_wt
 
-def rules_HAC_communities(one_hot, communities_wt, matrix_one_hot, encoded_data):
+def rules_HAC_communities(communities_wt, matrix_one_hot, encoded_data):
     # Effectuer le clustering HAC
     groupe, new_cluster, index, index_of_cluster = clustering_CAH(
         encoded_data, number_of_clusters=10, metric="cosine"
@@ -504,12 +504,13 @@ def rules_HAC_communities(one_hot, communities_wt, matrix_one_hot, encoded_data)
     rules_clustering_hac = combine_cluster_rules(
         rules_clustering_hac, rules_reclustering_hac
     )
-    
+    export_rules(rules_clustering_hac, "clustering_hac")
     # Effectuer le clustering de détection de communautés
-    communities_clustering = extract_rules_from_communities(
-        one_hot, communities_wt
-    )
 
+    communities_clustering = extract_rules_from_communities(
+        matrix_one_hot, communities_wt
+    )
+    export_rules(communities_clustering, "community")
     # Combiner les résultats des deux méthodes
     combined_rules = rules_clustering_hac.append(communities_clustering)
     combined_rules.reset_index(inplace=True, drop=True)
@@ -601,6 +602,7 @@ if __name__ == "__main__":
 
     if matrix_path.exists():
         matrix_one_hot = pd.read_csv(matrix_path)
+
     else:
         df_article_sort = transform_data(df_total, int(args.occurrence))
         print(
@@ -620,8 +622,19 @@ if __name__ == "__main__":
     if encoded_path.exists():
         encoded_data = pd.read_csv(encoded_path)
     else:
+ 
+        my_pykeen_model = torch.load(args.model_path, map_location=torch.device("cpu"))
+        entity_embeddings = my_pykeen_model.entity_representations[0]._embeddings.weight
+        relation_embeddings = my_pykeen_model.relation_representations[0]._embeddings.weight
+        entity_embeddings_cpu = entity_embeddings.cpu()
+        relation_embeddings_cpu = relation_embeddings.cpu()
+        entity_embeddings_df = pd.DataFrame(entity_embeddings_cpu.detach().numpy())
+        relation_embeddings_df = pd.DataFrame(relation_embeddings_cpu.detach().numpy())
+        rule_score=score_one_hot_matrices(matrix_one_hot,entity_embeddings_df, relation_embeddings_df,my_pykeen_model)
+        rule_score_df = pd.DataFrame(rule_score)
+        rule_score_df.to_json(f'rule_scores1.json', orient="records")
         encoded_data = dimensionality_reduction(
-            matrix_one_hot, args.n_components, args.method
+            matrix_one_hot, args.n_components, args.method,rule_score
         )
         encoded_data.to_csv(encoded_path, index=False)
 
@@ -662,8 +675,8 @@ if __name__ == "__main__":
 
     rules_combined = pd.DataFrame()
     if args.clustercombo:
+        communities_wt = walk_trap(matrix_one_hot)
         rules_combined = rules_HAC_communities(
-            matrix_one_hot,
             communities_wt,
             matrix_one_hot,
             encoded_data
@@ -714,6 +727,8 @@ if __name__ == "__main__":
             ) = score_rules(
             rules, entity_embeddings_df, relation_embeddings_df, my_pykeen_model
         )
+        rule_scores_df = pd.DataFrame(rule_scores)
+        rule_scores_df.to_json(f'rule_scores.json', orient="records")
         #export_rules(rules, "all_rules_with_scores",rule_scores=rule_scores)
         # Convertir les règles classifiées en DataFrames
         unknown_df = pd.DataFrame(unknown_rules)

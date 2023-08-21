@@ -2,8 +2,8 @@ import re
 import numpy as np
 from sklearn.preprocessing import MinMaxScaler
 from tqdm import tqdm
-
-
+import torch
+import pandas as pd
 def interestingness_measure(rules_fp, one_hot):
     """
     Compute a measure of the interestingness
@@ -132,3 +132,36 @@ def score_rules(rules, entity_embeddings, relation_embeddings, model, prefix="al
         partial_known_scores,
         known_scores,
     )
+
+
+import torch
+import pandas as pd
+import re
+
+def score_one_hot_matrices(dataframe, entity_embeddings, relation_embeddings, model):
+    rule_scores = []
+    support_values = []
+
+    for nom_colonne in dataframe.columns:
+        antecedents = [
+            int(nom_colonne) if nom_colonne.isdigit() else int(re.search(r"\d+", nom_colonne).group())
+        ]
+        for antecedent in antecedents:
+            if antecedent in entity_embeddings.index:
+                scores = []
+                for relation in relation_embeddings.index:
+                    hrt_batch = torch.tensor([[antecedent, relation, antecedent]])
+                    triple_scores = model.score_hrt(hrt_batch)
+                    scores.append(torch.max(triple_scores).item())
+                max_score = max(scores, default=0.0)
+                rule_scores.append(max_score)
+                
+        # Calculer le support pour la colonne actuelle
+        #count_target_value = dataframe[nom_colonne].value_counts()
+        #total_rows = dataframe.shape[0]
+        #support = count_target_value / total_rows
+        #support_values.append(support)
+        normalized_scores = normalize_scores(rule_scores)
+
+
+    return  normalized_scores #, support_values

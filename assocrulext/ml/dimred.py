@@ -8,13 +8,15 @@ import umap
 
 # Reduction of the number of variables + Clustering
 # The autoencoder allows to reduce the dimension and to be able to apply the CAH which is not robust in the face of too many variables
-def dimensionality_reduction(one_hot_matrix, n_components, method):
+def dimensionality_reduction(one_hot_matrix, n_components, method,score=None):
     methods = {
         "autoencoder": AutoEncoderDimensionReduction(
             encoding_dim=n_components,
             epochs=100,
             batch_size=128,
             lr=1e-2,
+            novelty_score=score,
+            
         ),
         "pca": PCA(n_components=n_components),
         "tsne": TSNE(
