@@ -602,6 +602,7 @@ if __name__ == "__main__":
 
     if matrix_path.exists():
         matrix_one_hot = pd.read_csv(matrix_path)
+        print(matrix_one_hot.shape)
 
     else:
         df_article_sort = transform_data(df_total, int(args.occurrence))

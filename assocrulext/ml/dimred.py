@@ -17,6 +17,7 @@ def dimensionality_reduction(one_hot_matrix, n_components, method,score=None):
             lr=1e-2,
             novelty_score=score,
             
+            
         ),
         "pca": PCA(n_components=n_components),
         "tsne": TSNE(
