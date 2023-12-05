@@ -1,9 +1,14 @@
 import re
+import SPARQLWrapper
 import numpy as np
 from sklearn.preprocessing import MinMaxScaler
 from tqdm import tqdm
 import torch
 import pandas as pd
+
+from assocrulext.io.querying import query
+
+
 def interestingness_measure(rules_fp, one_hot):
     """
     Compute a measure of the interestingness
@@ -61,10 +66,19 @@ def normalize_scores(scores):
     return normalized_scores
 
 
+def score_rules_hard(rules, dataset, graph, endpoint, prefix="all"):
+    result_df = query([dataset], graph, endpoint)
+
+    for rule in rules:
+        pass
+
+
 import torch
 
 
-def score_rules(rules, entity_embeddings, relation_embeddings, model, prefix="all"):
+def score_rules_embedding(
+    rules, entity_embeddings, relation_embeddings, model, prefix="all"
+):
     rule_scores = []
 
     for rule in tqdm(rules, desc=f"Scoring {prefix} rules for noverly"):
@@ -138,13 +152,16 @@ import torch
 import pandas as pd
 import re
 
+
 def score_one_hot_matrices(dataframe, entity_embeddings, relation_embeddings, model):
     rule_scores = []
     support_values = []
 
     for nom_colonne in dataframe.columns:
         antecedents = [
-            int(nom_colonne) if nom_colonne.isdigit() else int(re.search(r"\d+", nom_colonne).group())
+            int(nom_colonne)
+            if nom_colonne.isdigit()
+            else int(re.search(r"\d+", nom_colonne).group())
         ]
         for antecedent in antecedents:
             if antecedent in entity_embeddings.index:
@@ -155,13 +172,12 @@ def score_one_hot_matrices(dataframe, entity_embeddings, relation_embeddings, mo
                     scores.append(torch.max(triple_scores).item())
                 max_score = max(scores, default=0.0)
                 rule_scores.append(max_score)
-                
+
         # Calculer le support pour la colonne actuelle
-        #count_target_value = dataframe[nom_colonne].value_counts()
-        #total_rows = dataframe.shape[0]
-        #support = count_target_value / total_rows
-        #support_values.append(support)
+        # count_target_value = dataframe[nom_colonne].value_counts()
+        # total_rows = dataframe.shape[0]
+        # support = count_target_value / total_rows
+        # support_values.append(support)
         normalized_scores = normalize_scores(rule_scores)
 
-
-    return  normalized_scores #, support_values
+    return normalized_scores  # , support_values

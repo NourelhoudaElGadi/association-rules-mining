@@ -15,6 +15,36 @@ datasets = {
             """,
         "wikidata": "",
     },
+    "issa-hal": {
+        "type": "rdf",
+        "url": "http://data-issa.euromov.fr/sparql",
+        "kw": """
+                prefix oa: <http://www.w3.org/ns/oa#>
+                prefix skosxl: <http://www.w3.org/2008/05/skos-xl#> 
+                SELECT distinct ?article ?label
+                from <http://data-issa.euromov.fr/graph/document-keywords> 
+                WHERE { 
+                    ?s oa:hasTarget ?article.
+                    ?s oa:hasBody ?uri.
+                    ?uri rdf:value ?label. 
+                } limit 10000 offset %s
+            """,
+        "entities": """
+                prefix oa: <http://www.w3.org/ns/oa#>
+                prefix skosxl: <http://www.w3.org/2008/05/skos-xl#> 
+                SELECT distinct ?article ?label 
+                # from <http://data-issa.euromov.fr/graph/dbpedia-named-entities> 
+                # from <http://data-issa.euromov.fr/graph/wikidata-named-entities> 
+                # from <http://data-issa.euromov.fr/graph/dbpedia-spotlight-nes> 
+                from <http://data-issa.euromov.fr/graph/entity-fishing-nes> 
+                from <http://id.nlm.nih.gov/mesh/graph>
+                WHERE { 
+                    ?s oa:hasTarget ?article ; oa:hasBody ?uri . 
+                    ?uri rdf:value ?label .
+                } limit 10000 offset %s
+            """,
+        "wikidata": "",
+    },
     "covid": {
         "type": "rdf",
         "url": "http://covidontheweb.inria.fr/sparql",

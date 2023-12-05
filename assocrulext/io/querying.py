@@ -3,8 +3,14 @@ import json
 from SPARQLWrapper import SPARQLWrapper, JSON
 
 import pandas as pd
+from redis import Redis
+from assocrulext.utils.data import df_from_redis_if_exists, df_to_redis
 
 from utils import timeit
+
+cache_instance = None
+
+import requests
 
 
 @timeit
@@ -17,6 +23,10 @@ def sparql_service_to_dataframe(service, query):
     sparql = SPARQLWrapper(service)
     sparql.setQuery(query)
     sparql.setReturnFormat(JSON)
+    print(requests.certs.where())
+    import ssl
+
+    ssl._create_default_https_context = ssl._create_unverified_context
     result = sparql.query()
 
     processed_results = json.load(result.response)
@@ -30,7 +40,51 @@ def sparql_service_to_dataframe(service, query):
     return pd.DataFrame(out, columns=cols)
 
 
-def query(datasets, graph, endpoint):
+class SparqlQueryEngine:
+    def __init__(self, endpoint, cache_instance: Redis = None) -> None:
+        self.endpoint = endpoint
+        self.cache_instance = cache_instance
+
+    def query(self, query):
+        # print("query = ", query)
+
+        offset = 0
+        endpoint_data_url = self.endpoint
+        complete_query = query % (offset)
+        if self.cache_instance is None:
+            cached = None
+        else:
+            cached = df_from_redis_if_exists(
+                self.cache_instance, f"{complete_query}_{endpoint_data_url}"
+            )
+        if cached is None:
+            df_query = sparql_service_to_dataframe(endpoint_data_url, complete_query)
+
+            ## List with all the request responses ##
+            list_total = [df_query]
+            ## Get all data by set the offset at each round ##
+            while df_query.shape[0] > 0:
+                # print("offset = ", offset)
+                offset += 10000
+                complete_query = query % (offset)
+                df_query = sparql_service_to_dataframe(
+                    endpoint_data_url, complete_query
+                )
+                list_total.append(df_query)
+            final_df = pd.concat(list_total)
+            if cache_instance != None:
+                df_to_redis(
+                    self.cache_instance,
+                    f"{complete_query}_{endpoint_data_url}",
+                    final_df,
+                )
+        else:
+            final_df = cached
+
+        return final_df
+
+
+def query(datasets, graph, query_engine: SparqlQueryEngine):
     """
     Query the data according to the provided SPARQL query (see datasets.py)
 
@@ -39,8 +93,7 @@ def query(datasets, graph, endpoint):
             The DataFrame with all the request responses
     """
 
-    offset = 0
-    endpoint_data = datasets[endpoint]
+    endpoint_data = datasets[query_engine.endpoint]
     if graph != None:
         query = endpoint_data[graph]
 

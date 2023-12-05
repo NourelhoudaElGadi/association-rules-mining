@@ -1,6 +1,9 @@
+import pickle
 import pandas as pd
 from assocrulext.utils.timing import timeit
 from assocrulext.rules.fitering import find_symmetric
+
+import pyarrow as pa
 
 
 def delete_Label_number(label):
@@ -9,6 +12,23 @@ def delete_Label_number(label):
         if i.isdigit():
             k = k + 1
     return k == len(label)
+
+
+def df_from_redis_if_exists(redis_client, key):
+    """
+    Return a DataFrame from Redis if it exists, else return None.
+    """
+    if redis_client.exists(key):
+        return pickle.loads(redis_client.get(key))
+    else:
+        return None
+
+
+def df_to_redis(redis_client, key, df):
+    """
+    Serialize a DataFrame and store it in Redis.
+    """
+    redis_client.set(key, pickle.dumps(df).to_buffer().to_pybytes())
 
 
 @timeit

@@ -7,14 +7,18 @@ from assocrulext.eval import (
     interestingness_measure,
     interestingness_measure_clustering,
     interestingness_measure_community,
-    score_rules,
+    score_rules_embedding,
 )
 from assocrulext.io.data import fetch_crobora_data
 
-from assocrulext.io.querying import sparql_service_to_dataframe
+from assocrulext.io.querying import SparqlQueryEngine, sparql_service_to_dataframe
 from assocrulext.ml.dimred import dimensionality_reduction
 from assocrulext.rules.fitering import delete_redundant, delete_redundant_group
-from assocrulext.rules.fpgrowth_algo import fp_growth_association_rules, fp_growth_per_cluster, fp_growth_per_community
+from assocrulext.rules.fpgrowth_algo import (
+    fp_growth_association_rules,
+    fp_growth_per_cluster,
+    fp_growth_per_community,
+)
 from assocrulext.utils.data import (
     create_rules_df,
     create_rules_df_group,
@@ -56,7 +60,7 @@ parser = argparse.ArgumentParser()
 
 parser.add_argument(
     "--endpoint",
-    help="The endpoint from where retrieve the data (identified through codes: issa, covid). Include this information in queries.json if not available.",
+    help="The endpoint from where retrieve the data (identified through codes: issa, covid, hal-euromov). Include this information in queries.json if not available.",
     required=False,
 )
 parser.add_argument(
@@ -90,8 +94,8 @@ parser.add_argument(
 parser.add_argument(
     "--model_path",
     type=str,
-    required=True,
-    help="Chemin vers le modèle d'embedding de graphe",
+    required=False,
+    help="Path towards a graph embeddings checkpoint. If provided, the rules will be scored using the knowledge novelty score. The knowledge base must be the one to which entities in the rules refer to.",
 )
 
 parser.add_argument(
@@ -160,59 +164,6 @@ args = parser.parse_args()
 # app = Flask(__name__)
 
 
-def query():
-    """
-    Query the data according to the provided SPARQL query (see datasets.py)
-
-    Returns :
-        df_total : DataFrame
-            The DataFrame with all the request responses
-    """
-
-    offset = 0
-    if args.graph != None:
-        query = datasets[args.endpoint][args.graph]
-
-    print("query = ", query)
-
-    complete_query = query % (offset)
-    df_query = sparql_service_to_dataframe(
-        datasets[args.endpoint]["url"], complete_query
-    )
-
-    ## List with all the request responses ##
-    list_total = [df_query]
-    ## Get all data by set the offset at each round ##
-    while df_query.shape[0] > 0:
-        print("offset = ", offset)
-        offset += 10000
-        complete_query = query % (offset)
-        df_query = sparql_service_to_dataframe(
-            datasets[args.endpoint]["url"], complete_query
-        )
-
-        list_total.append(df_query)
-
-    ## Concatenate all the dataframes from the list ##
-    df_total = pd.concat(list_total)
-
-    data_path = Path("data")
-    if not data_path.exists():
-        data_path.mkdir()
-
-    datafile = (
-        "data/input_data_"
-        + args.endpoint
-        + ("_" + args.graph if args.graph else "")
-        + ".csv"
-    )
-    df_total.to_csv(
-        datafile, sep=",", index=False, header=list(df_total.columns), mode="w"
-    )
-
-    return df_total
-
-
 def fetch_data(url):
     try:
         response = urlopen(url)
@@ -222,40 +173,73 @@ def fetch_data(url):
         return None
 
 
+from scipy.sparse import csr_matrix
+
+
+# @timeit
+# def compute_cooccurrence_matrix(df_article_sort):
+#     labels = df_article_sort["label"].unique().tolist()
+#     articles = df_article_sort["article"].unique().tolist()
+#     one_hot = csr_matrix((len(articles), len(labels)))
+#     df_article_sort.reset_index(inplace=True)
+
+#     article_indexes = {}
+#     current_article_index = 0
+#     for article in tqdm(articles):
+#         if article not in article_indexes:
+#             article_indexes[article] = current_article_index
+#             current_article_index += 1
+
+#     label_indexes = {}
+#     current_label_index = 0
+#     for label in tqdm(labels):
+#         if label not in label_indexes:
+#             label_indexes[label] = current_label_index
+#             current_label_index += 1
+
+#     for index, row in tqdm(df_article_sort.iterrows(), total=df_article_sort.shape[0]):
+#         label = row["label"]
+#         article = row["article"]
+#         one_hot[article_indexes[article], label_indexes[label]] = 1
+#     one_hot_label = pd.DataFrame(one_hot.toarray(), columns=labels)
+#     one_hot_label["documents"] = df_article_sort["article"].tolist()
+#     return one_hot_label
+
+
 # Creation of the co-occurrence matrix, which is the dataset for clustering
-
-
 @timeit
-def compute_cooccurrence_matrix(df_article_sort):
+def compute_cooccurrence_matrix(df_article_sort, binary=True):
+    import scipy.sparse as sp
+
     # Convert the article column to string and specify that label and year are categories for the one-hot-encoding
     df_article_sort[["label"]].drop_duplicates()
 
-    train = df_article_sort.astype({"article": str, "label": str})
+    train = df_article_sort.astype({"article": str, "label": str}).set_index("article")
     train["label"] = train["label"].astype("category")
 
     ##One hot encoding train set (5000 by 5000 articles) + Sparse type to reduce the memory
-    one_hot = (
-        pd.get_dummies(
-            train[train["article"].isin(train["article"].unique()[:5000])]
-            .drop_duplicates()
-            .set_index("article")
-        )
-        .sum(level=0)
-        .apply(lambda y: y.apply(lambda x: 1 if x >= 1 else 0))
-        .astype("Sparse[int]")
-    )
+    one_hot = pd.get_dummies(
+        train[train["article"].isin(train["article"].unique()[:5000])]
+        .drop_duplicates()
+        .set_index("article")
+    ).sum(level=0)
+    if binary:
+        one_hot = one_hot.apply(lambda y: y.apply(lambda x: 1 if x >= 1 else 0))
+    one_hot = one_hot.astype("Sparse[int]")
     i = 5000
     while one_hot.shape[0] < len(train["article"].unique()):
-        one_hot = one_hot.append(
-            pd.get_dummies(
-                train[train["article"].isin(train["article"].unique()[i : i + 5000])]
-                .drop_duplicates()
-                .set_index("article")
+        local_one_hot = pd.get_dummies(
+            train[train["article"].isin(train["article"].unique()[i : i + 5000])]
+            .drop_duplicates()
+            .set_index("article")
+        ).sum(level=0)
+        if binary:
+            local_one_hot = one_hot.apply(
+                lambda y: y.apply(lambda x: 1 if x >= 1 else 0)
             )
-            .sum(level=0)
-            .apply(lambda y: y.apply(lambda x: 1 if x >= 1 else 0))
-            .astype("Sparse[int]")
-        )
+        local_one_hot = one_hot.astype("Sparse[int]")
+        one_hot = one_hot.append(local_one_hot)
+
         i = i + 5000
 
     # Replace NaN by 0 and delete the rows with only 0
@@ -277,7 +261,7 @@ def compute_cooccurrence_matrix(df_article_sort):
 
 @timeit
 def extract_rules_no_clustering(one_hot_matrix):
-    rules_fp =fp_growth_association_rules(one_hot_matrix, 3, float(args.conf))
+    rules_fp = fp_growth_association_rules(one_hot_matrix, 3, float(args.conf))
 
     print(
         f"No clustering | Number of rules before filtering = {str(rules_fp.shape[0])}"
@@ -368,12 +352,15 @@ def rules_clustering(one_hot_label, groupe, index, new_cluster, index_of_cluster
 
     # Associate each rule to the cluster it belongs to
 
-    rules_clustering_final["cluster"] = [f"clust{str(i + 1)}" for i in range(len(rules_clustering_final))]
+    rules_clustering_final["cluster"] = [
+        f"clust{str(i + 1)}" for i in range(len(rules_clustering_final))
+    ]
 
     # Number of rules
     print(f"Clustering | Number of rules = {str(rules_clustering_final.shape[0])}")
 
     return rules_clustering_final
+
 
 @timeit
 def rules_new_cluster(one_hot_label, new_cluster, index_of_cluster):
@@ -490,6 +477,7 @@ def rules_community_cluster(one_hot, communities_wt, encoding_dim, method):
 
     return all_rules_clustering_wt
 
+
 def rules_HAC_communities(communities_wt, matrix_one_hot, encoded_data):
     # Effectuer le clustering HAC
     groupe, new_cluster, index, index_of_cluster = clustering_CAH(
@@ -515,8 +503,8 @@ def rules_HAC_communities(communities_wt, matrix_one_hot, encoded_data):
     combined_rules = rules_clustering_hac.append(communities_clustering)
     combined_rules.reset_index(inplace=True, drop=True)
 
-
     return combined_rules
+
 
 def filename(cluster):
     if args.filename:
@@ -530,20 +518,19 @@ def filename(cluster):
     return "data/rules" + dataset + graph + "_" + cluster + ".json"
 
 
-def export_rules(rules_df, cluster,rule_scores=None):
+def export_rules(rules_df, cluster, rule_scores=None):
     if args.graph:
         rules_df["graph"] = args.graph
 
     rules_df["source"] = rules_df["antecedents"]
     rules_df["target"] = rules_df["consequents"]
 
-
     if rule_scores is not None:
         rules_df["score"] = rule_scores
-        
+
     cluster_filename = filename(cluster)
     print("Filename: " + cluster_filename)
-    
+
     rules_df.to_json(path_or_buf=cluster_filename, orient="records")
 
 
@@ -590,7 +577,22 @@ if __name__ == "__main__":
         df_total = pd.read_csv(args.input)
     elif args.endpoint is not None and datasets[args.endpoint]["type"] == "rdf":
         ## retrieve the data from SPARQL endpoint
-        df_total = query()
+        engine = SparqlQueryEngine(datasets[args.endpoint]["url"])
+        query = datasets[args.endpoint][args.graph]
+        df_total = engine.query(query)
+        data_path = Path("data")
+        if not data_path.exists():
+            data_path.mkdir()
+
+        datafile = (
+            "data/input_data_"
+            + args.endpoint
+            + ("_" + args.graph if args.graph else "")
+            + ".csv"
+        )
+        df_total.to_csv(
+            datafile, sep=",", index=False, header=list(df_total.columns), mode="w"
+        )
     elif args.endpoint == "crobora":
         df_total = fetch_crobora_data()
 
@@ -623,19 +625,35 @@ if __name__ == "__main__":
     if encoded_path.exists():
         encoded_data = pd.read_csv(encoded_path)
     else:
- 
-        my_pykeen_model = torch.load(args.model_path, map_location=torch.device("cpu"))
-        entity_embeddings = my_pykeen_model.entity_representations[0]._embeddings.weight
-        relation_embeddings = my_pykeen_model.relation_representations[0]._embeddings.weight
-        entity_embeddings_cpu = entity_embeddings.cpu()
-        relation_embeddings_cpu = relation_embeddings.cpu()
-        entity_embeddings_df = pd.DataFrame(entity_embeddings_cpu.detach().numpy())
-        relation_embeddings_df = pd.DataFrame(relation_embeddings_cpu.detach().numpy())
-        rule_score=score_one_hot_matrices(matrix_one_hot,entity_embeddings_df, relation_embeddings_df,my_pykeen_model)
-        rule_score_df = pd.DataFrame(rule_score)
-        rule_score_df.to_json(f'rule_scores1.json', orient="records")
+        if args.model_path:
+            my_pykeen_model = torch.load(
+                args.model_path, map_location=torch.device("cpu")
+            )
+            entity_embeddings = my_pykeen_model.entity_representations[
+                0
+            ]._embeddings.weight
+            relation_embeddings = my_pykeen_model.relation_representations[
+                0
+            ]._embeddings.weight
+            entity_embeddings_cpu = entity_embeddings.cpu()
+            relation_embeddings_cpu = relation_embeddings.cpu()
+            entity_embeddings_df = pd.DataFrame(entity_embeddings_cpu.detach().numpy())
+            relation_embeddings_df = pd.DataFrame(
+                relation_embeddings_cpu.detach().numpy()
+            )
+            rule_score = score_one_hot_matrices(
+                matrix_one_hot,
+                entity_embeddings_df,
+                relation_embeddings_df,
+                my_pykeen_model,
+            )
+            rule_score_df = pd.DataFrame(rule_score)
+            rule_score_df.to_json("rule_scores1.json", orient="records")
+
+        else:
+            rule_score = None
         encoded_data = dimensionality_reduction(
-            matrix_one_hot, args.n_components, args.method,rule_score
+            matrix_one_hot, args.n_components, args.method, rule_score
         )
         encoded_data.to_csv(encoded_path, index=False)
 
@@ -678,17 +696,17 @@ if __name__ == "__main__":
     if args.clustercombo:
         communities_wt = walk_trap(matrix_one_hot)
         rules_combined = rules_HAC_communities(
-            communities_wt,
-            matrix_one_hot,
-            encoded_data
+            communities_wt, matrix_one_hot, encoded_data
         )
         export_rules(rules_combined, "combining_clustering_community")
     # all_rules_clustering_wt = rulesCommunityCluster(matrix_one_hot, communities_wt)
 
     # exportRules(all_rules_clustering_wt, 'communities_clustering')
-    all_rules = rules_no_clustering.append(rules_clustering_CAH).append(
-        rules_communities
-    ).append(rules_combined)
+    all_rules = (
+        rules_no_clustering.append(rules_clustering_CAH)
+        .append(rules_communities)
+        .append(rules_combined)
+    )
     all_rules.reset_index(inplace=True, drop=True)
 
     print("All rules | Number of rules = ", all_rules.shape[0])
@@ -707,7 +725,9 @@ if __name__ == "__main__":
     if args.model_path:
         my_pykeen_model = torch.load(args.model_path, map_location=torch.device("cpu"))
         entity_embeddings = my_pykeen_model.entity_representations[0]._embeddings.weight
-        relation_embeddings = my_pykeen_model.relation_representations[0]._embeddings.weight
+        relation_embeddings = my_pykeen_model.relation_representations[
+            0
+        ]._embeddings.weight
         entity_embeddings_cpu = entity_embeddings.cpu()
         relation_embeddings_cpu = relation_embeddings.cpu()
         # Convertir les embeddings des entités en DataFrame
@@ -725,15 +745,16 @@ if __name__ == "__main__":
             unknown_scores,
             partial_known_scores,
             known_scores,
-            ) = score_rules(
+        ) = score_rules_embedding(
             rules, entity_embeddings_df, relation_embeddings_df, my_pykeen_model
         )
+
         rule_scores_df = pd.DataFrame(rule_scores)
-        rule_scores_df.to_json(f'rule_scores.json', orient="records")
-        #export_rules(rules, "all_rules_with_scores",rule_scores=rule_scores)
+        rule_scores_df.to_json("rule_scores.json", orient="records")
+        # export_rules(rules, "all_rules_with_scores",rule_scores=rule_scores)
         # Convertir les règles classifiées en DataFrames
         unknown_df = pd.DataFrame(unknown_rules)
-        export_rules(unknown_df, "all_rules_with_scores",rule_scores=unknown_scores)
+        export_rules(unknown_df, "all_rules_with_scores", rule_scores=unknown_scores)
     filename = Path(f"data/config_{str(args.endpoint)}.json")
     # verify if config file exists before
     if filename.exists():
