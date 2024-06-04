@@ -1,7 +1,7 @@
 datasets = {
     "issa": {
         "type": "rdf",
-        "url": "http://localhost:8890/sparql",
+        "url": "http://data-issa.cirad.fr/sparql",
         "agrovoc": """
                 prefix oa: <http://www.w3.org/ns/oa#>
                 prefix skosxl: <http://www.w3.org/2008/05/skos-xl#> 
