@@ -12,7 +12,6 @@ import scipy.linalg.blas
 from tqdm import tqdm
 
 
-from assocrulext.ml.autoencoder import AutoEncoderDimensionReduction
 from assocrulext.clustering.hac import *
 from assocrulext.clustering.community import *
 from assocrulext.clustering.cooc import *
@@ -20,6 +19,7 @@ from assocrulext.rules.fitering import delete_redundant_group
 from assocrulext.eval import *
 from assocrulext.utils.data import *
 from assocrulext.rules.fpgrowth_algo import fp_growth_per_cluster
+
 logger = logging.getLogger(__name__)
 
 
