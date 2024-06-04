@@ -1,23 +1,24 @@
-from scipy.sparse import csr_matrix
+from scipy.sparse import coo_matrix
 from sklearn.decomposition import PCA, FastICA
 from sklearn.manifold import TSNE, Isomap, MDS, LocallyLinearEmbedding
 import pandas as pd
-from assocrulext.ml.autoencoder import AutoEncoderDimensionReduction
+
 import umap
+
+from assocrulext.ml.autoencoder import AutoEncoderDimensionalityReduction
 
 
 # Reduction of the number of variables + Clustering
 # The autoencoder allows to reduce the dimension and to be able to apply the CAH which is not robust in the face of too many variables
-def dimensionality_reduction(one_hot_matrix, n_components, method,score=None):
+def dimensionality_reduction(one_hot_matrix, n_components, method, score=None):
     methods = {
-        "autoencoder": AutoEncoderDimensionReduction(
+        "autoencoder": AutoEncoderDimensionalityReduction(
+            input_dim=one_hot_matrix.shape[1],
             encoding_dim=n_components,
             epochs=100,
             batch_size=128,
-            lr=1e-2,
+            learning_rate=1e-1,
             novelty_score=score,
-            
-            
         ),
         "pca": PCA(n_components=n_components),
         "tsne": TSNE(
@@ -42,15 +43,9 @@ def dimensionality_reduction(one_hot_matrix, n_components, method,score=None):
     # dimensionality reduction is specified by the `n_components` parameter. The resulting reduced data is
     # returned with column names based
 
-    # Convert the input matrix to a dense or sparse matrix depending on the chosen method
-    if method in ["pca", "ica", "lle", "ica", "isomap", "mds"]:
-        one_hot_matrix_dense = csr_matrix(one_hot_matrix).toarray()
-    else:
-        one_hot_matrix_dense = one_hot_matrix.values
-
     # Dimensionality reduction
     reducer = methods[method]
-    reduced_data = pd.DataFrame(reducer.fit_transform(one_hot_matrix_dense))
+    reduced_data = pd.DataFrame(reducer.fit_transform(one_hot_matrix.to_numpy()))
 
     # Define column names for the reduced data
     reduced_data.columns = [f"{method}_{str(i + 1)}" for i in range(n_components)]
