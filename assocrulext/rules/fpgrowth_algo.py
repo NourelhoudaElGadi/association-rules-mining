@@ -3,6 +3,8 @@ from mlxtend.frequent_patterns import fpgrowth
 
 from assocrulext.utils.timing import timeit
 import pandas as pd
+
+
 @timeit
 def fp_growth_association_rules(one_hot, max_len, min_confidence):
     """
@@ -73,22 +75,23 @@ def fp_growth_per_community(one_hot, communities, max_len, min_confidence):
 
 def extract_rules_for_group(one_hot_cluster, max_len, min_confidence):
     rules_fp_clustering = []
-
-    frequent_itemsets_fp = fpgrowth(
-        one_hot_cluster,
-        min_support=5 / one_hot_cluster.shape[0],
-        max_len=max_len,
-        use_colnames=True,
-    )
-    if len(frequent_itemsets_fp) != 0:
-        rules_fp_clustering.append(
-            association_rules(
-                frequent_itemsets_fp,
-                metric="confidence",
-                min_threshold=min_confidence,
-            ).sort_values(by="lift", ascending=False)
+    if one_hot_cluster.shape[0] > 0:
+        frequent_itemsets_fp = fpgrowth(
+            one_hot_cluster,
+            min_support=5 / one_hot_cluster.shape[0],
+            max_len=max_len,
+            use_colnames=True,
         )
+        if len(frequent_itemsets_fp) != 0:
+            rules_fp_clustering.append(
+                association_rules(
+                    frequent_itemsets_fp,
+                    metric="confidence",
+                    min_threshold=min_confidence,
+                ).sort_values(by="lift", ascending=False)
+            )
+        else:
+            rules_fp_clustering.append(pd.DataFrame([]))
     else:
         rules_fp_clustering.append(pd.DataFrame([]))
-
     return rules_fp_clustering

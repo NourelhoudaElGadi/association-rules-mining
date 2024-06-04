@@ -81,7 +81,9 @@ def score_rules_embedding(
 ):
     rule_scores = []
 
-    for rule in tqdm(rules, desc=f"Scoring {prefix} rules for noverly"):
+    for index, rule in tqdm(
+        rules.iterrows(), desc=f"Scoring {prefix} rules for novelty", total=len(rules)
+    ):
         antecedents = [
             int(a) if a.isdigit() else re.search(r"\d+", a).group()
             for a in rule["antecedents"]
@@ -157,11 +159,13 @@ def score_one_hot_matrices(dataframe, entity_embeddings, relation_embeddings, mo
     rule_scores = []
     support_values = []
 
-    for nom_colonne in dataframe.columns:
+    for nom_colonne in tqdm(dataframe.columns, desc="Scoring one-hot matrix"):
         antecedents = [
-            int(nom_colonne)
-            if nom_colonne.isdigit()
-            else int(re.search(r"\d+", nom_colonne).group())
+            (
+                int(nom_colonne)
+                if nom_colonne.isdigit()
+                else int(re.search(r"\d+", nom_colonne).group())
+            )
         ]
         for antecedent in antecedents:
             if antecedent in entity_embeddings.index:
